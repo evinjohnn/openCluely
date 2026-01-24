@@ -44,10 +44,8 @@ export class WindowHelper {
     const primaryDisplay = screen.getPrimaryDisplay()
     const workArea = primaryDisplay.workAreaSize
 
-    // Use 75% width if debugging has occurred, otherwise use 70%
-    const maxAllowedWidth = Math.floor(
-      workArea.width * (this.appState.getHasDebugged() ? 0.75 : 0.7)
-    )
+    // Allow up to 90% of screen width for the wider UI
+    const maxAllowedWidth = Math.floor(workArea.width * 0.9)
 
     // Ensure width doesn't exceed max allowed width and height is reasonable
     const newWidth = Math.min(width, maxAllowedWidth)
@@ -81,7 +79,7 @@ export class WindowHelper {
 
 
     const windowSettings: Electron.BrowserWindowConstructorOptions = {
-      width: 990,
+      width: Math.min(600, Math.floor(workArea.width * 0.9)),
       height: 600,
       minWidth: 300,
       minHeight: 200,
@@ -142,6 +140,15 @@ export class WindowHelper {
         // console.log("Window is now visible and centered")
       }
     })
+
+    // Fallback: Show window after a timeout if ready-to-show doesn't fire
+    setTimeout(() => {
+      if (this.mainWindow && !this.mainWindow.isVisible()) {
+        this.centerWindow()
+        this.mainWindow.show()
+        this.mainWindow.focus()
+      }
+    }, 2000)
 
     const bounds = this.mainWindow.getBounds()
     this.windowPosition = { x: bounds.x, y: bounds.y }
@@ -242,12 +249,16 @@ export class WindowHelper {
 
     // Get current window size or use defaults
     const windowBounds = this.mainWindow.getBounds()
-    const windowWidth = windowBounds.width || 400
-    const windowHeight = windowBounds.height || 600
+    let windowWidth = windowBounds.width || 600
+    let windowHeight = windowBounds.height || 600
 
-    // Calculate center position
-    const centerX = Math.floor((workArea.width - windowWidth) / 2)
-    const centerY = Math.floor((workArea.height - windowHeight) / 2)
+    // Ensure window doesn't exceed screen bounds (allow up to 90% of screen width)
+    const maxAllowedWidth = Math.floor(workArea.width * 0.9)
+    windowWidth = Math.min(windowWidth, maxAllowedWidth)
+
+    // Calculate center position, ensuring window stays on screen
+    const centerX = Math.max(0, Math.floor((workArea.width - windowWidth) / 2))
+    const centerY = Math.max(0, Math.floor((workArea.height - windowHeight) / 2))
 
     // Set window position
     this.mainWindow.setBounds({

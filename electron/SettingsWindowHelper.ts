@@ -19,6 +19,16 @@ export class SettingsWindowHelper {
 
     constructor() { }
 
+    /**
+     * Pre-create the settings window in the background (hidden) for faster first open
+     */
+    public preloadWindow(): void {
+        if (!this.settingsWindow || this.settingsWindow.isDestroyed()) {
+            // Create window off-screen so it's ready but not visible
+            this.createWindow(-10000, -10000);
+        }
+    }
+
     public toggleWindow(x?: number, y?: number): void {
         const mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed() && w !== this.settingsWindow && w !== this.advancedWindow);
         if (mainWindow && x !== undefined && y !== undefined) {
@@ -137,7 +147,8 @@ export class SettingsWindowHelper {
             webPreferences: {
                 nodeIntegration: true,
                 contextIsolation: true,
-                preload: path.join(__dirname, "preload.js")
+                preload: path.join(__dirname, "preload.js"),
+                backgroundThrottling: false // Keep window ready even when hidden
             }
         }
 

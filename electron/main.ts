@@ -505,6 +505,9 @@ async function initializeApp() {
     // Register global shortcuts using ShortcutsHelper
     appState.shortcutsHelper.registerGlobalShortcuts()
 
+    // Pre-create settings window in background for faster first open
+    appState.settingsWindowHelper.preloadWindow()
+
     // Connect to native audio service
     appState.connectNativeAudio()
     console.log("Native audio client connecting...")

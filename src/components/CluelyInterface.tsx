@@ -22,7 +22,8 @@ import {
     Edit3,
     SlidersHorizontal,
     Ghost,
-    Link
+    Link,
+    Code
 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -583,34 +584,59 @@ Provide only the answer, nothing else.`;
 
 
     const renderMessageText = (msg: Message) => {
+        // Code-containing messages get special styling
         if (msg.isCode || (msg.role === 'system' && msg.text.includes('```'))) {
             const parts = msg.text.split(/(```[\s\S]*?```)/g);
             return (
-                <div className="space-y-2">
-                    {parts.map((part, i) => {
-                        if (part.startsWith('```')) {
-                            const match = part.match(/```(\w+)?\n?([\s\S]*?)```/);
-                            if (match) {
-                                const lang = match[1] || 'python';
-                                const code = match[2].trim();
-                                return (
-                                    <SyntaxHighlighter
-                                        key={i}
-                                        language={lang}
-                                        style={dracula}
-                                        customStyle={{
-                                            borderRadius: '8px',
-                                            fontSize: '12px',
-                                            margin: '8px 0'
-                                        }}
-                                    >
-                                        {code}
-                                    </SyntaxHighlighter>
-                                );
+                <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 my-1">
+                    <div className="flex items-center gap-2 mb-2 text-purple-300 font-semibold text-xs uppercase tracking-wide">
+                        <Code className="w-3.5 h-3.5" />
+                        <span>Code Solution</span>
+                    </div>
+                    <div className="space-y-2 text-slate-200 text-[13px] leading-relaxed">
+                        {parts.map((part, i) => {
+                            if (part.startsWith('```')) {
+                                const match = part.match(/```(\w+)?\n?([\s\S]*?)```/);
+                                if (match) {
+                                    const lang = match[1] || 'python';
+                                    const code = match[2].trim();
+                                    return (
+                                        <div key={i} className="my-3 rounded-lg overflow-hidden border border-white/10 shadow-sm bg-[#0f172a]">
+                                            {/* IDE-style Header */}
+                                            <div className="bg-[#1e293b] px-3 py-1.5 flex items-center justify-between border-b border-white/5">
+                                                <div className="flex items-center gap-2 text-[10px] uppercase font-bold text-slate-400 font-mono">
+                                                    <div className="w-2 h-2 rounded-full bg-purple-500/80" />
+                                                    {lang || 'CODE'}
+                                                </div>
+                                                <div className="flex gap-1.5">
+                                                    <div className="w-2 h-2 rounded-full bg-white/10" />
+                                                    <div className="w-2 h-2 rounded-full bg-white/10" />
+                                                </div>
+                                            </div>
+                                            <SyntaxHighlighter
+                                                language={lang}
+                                                style={dracula}
+                                                customStyle={{
+                                                    margin: 0,
+                                                    borderRadius: 0,
+                                                    fontSize: '12px',
+                                                    background: 'transparent',
+                                                    padding: '12px',
+                                                    fontFamily: 'JetBrains Mono, Menlo, monospace'
+                                                }}
+                                                wrapLongLines={true}
+                                                showLineNumbers={true}
+                                                lineNumberStyle={{ minWidth: '2em', paddingRight: '1em', color: '#475569', textAlign: 'right' }}
+                                            >
+                                                {code}
+                                            </SyntaxHighlighter>
+                                        </div>
+                                    );
+                                }
                             }
-                        }
-                        return <span key={i}>{part}</span>;
-                    })}
+                            return <div key={i} className="whitespace-pre-wrap">{part}</div>;
+                        })}
+                    </div>
                 </div>
             );
         }
@@ -742,7 +768,7 @@ Provide only the answer, nothing else.`;
                         onQuit={() => window.electronAPI.quitApp()}
                     />
                     <div className="
-                    relative w-full max-w-[990px] 
+                    relative w-[600px] max-w-full
                     bg-[#1E1E1E]/95
                     backdrop-blur-2xl
                     border border-white/10
@@ -757,7 +783,7 @@ Provide only the answer, nothing else.`;
 
                         {/* Chat History - Only show if there are messages */}
                         {messages.length > 0 && (
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ scrollbarWidth: 'none' }}>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[clamp(300px,35vh,450px)]" style={{ scrollbarWidth: 'none' }}>
                                 {messages.map((msg) => (
                                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
                                         <div className={`
@@ -827,32 +853,32 @@ Provide only the answer, nothing else.`;
 
                         {/* Quick Actions - Minimal & Clean */}
                         <div className="flex flex-nowrap justify-center items-center gap-1.5 px-4 py-3 border-t border-white/[0.06] overflow-x-hidden">
-                            <button onClick={handleWhatToSay} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 h-[32px]">
+                            <button onClick={handleWhatToSay} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0">
                                 <Pencil className="w-3 h-3 opacity-70" /> What to answer?
                             </button>
-                            <button onClick={() => handleFollowUp('shorten')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 h-[32px]">
+                            <button onClick={() => handleFollowUp('shorten')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0">
                                 <MessageSquare className="w-3 h-3 opacity-70" /> Shorten
                             </button>
-                            <button onClick={handleRecap} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 h-[32px]">
+                            <button onClick={handleRecap} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0">
                                 <RefreshCw className="w-3 h-3 opacity-70" /> Recap
                             </button>
-                            <button onClick={handleFollowUpQuestions} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 h-[32px]">
+                            <button onClick={handleFollowUpQuestions} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0">
                                 <HelpCircle className="w-3 h-3 opacity-70" /> Follow Up Question
                             </button>
                             <button
                                 onClick={handleAnswerNow}
-                                className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 w-[74px] h-[32px] ${isManualRecording
-                                    ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                                    : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 border border-white/0'
+                                className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all active:scale-95 duration-200 interaction-base interaction-press min-w-[74px] whitespace-nowrap shrink-0 ${isManualRecording
+                                    ? 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20'
+                                    : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10'
                                     }`}
                             >
                                 {isManualRecording ? (
                                     <>
-                                        <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+                                        <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                                         Stop
                                     </>
                                 ) : (
-                                    <><Zap className="w-4 h-4 text-slate-400" /> Answer</>
+                                    <><Zap className="w-3 h-3 opacity-70" /> Answer</>
                                 )}
                             </button>
                         </div>
