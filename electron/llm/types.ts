@@ -17,31 +17,31 @@ export interface GenerationConfig {
  */
 export const MODE_CONFIGS = {
     answer: {
-        maxOutputTokens: 256,  // Let model generate, post-processor will clamp
+        maxOutputTokens: 65536,
         temperature: 0.25,
         topP: 0.85,
     } as GenerationConfig,
 
     assist: {
-        maxOutputTokens: 128,  // Shorter for insights
+        maxOutputTokens: 65536,
         temperature: 0.25,
         topP: 0.85,
     } as GenerationConfig,
 
     followUp: {
-        maxOutputTokens: 1024,
+        maxOutputTokens: 65536,
         temperature: 0.25,
         topP: 0.85,
     } as GenerationConfig,
 
     recap: {
-        maxOutputTokens: 1024,  // More for summaries
+        maxOutputTokens: 65536,
         temperature: 0.25,
         topP: 0.85,
     } as GenerationConfig,
 
     followUpQuestions: {
-        maxOutputTokens: 2048, // Increased to allow full 4 questions with context
+        maxOutputTokens: 65536,
         temperature: 0.4, // Slightly higher creative freedom
         topP: 0.9,
     } as GenerationConfig,
