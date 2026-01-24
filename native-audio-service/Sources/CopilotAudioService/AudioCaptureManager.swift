@@ -1,10 +1,14 @@
 import Foundation
-import AVFoundation
+import AVFAudio
+import CoreAudio
 
 /// Audio format constants for STT compatibility
 enum AudioConstants {
     static let sampleRate: Double = 16000.0
     static let channelCount: AVAudioChannelCount = 1
+    static let bitDepth: UInt32 = 16
+    static let chunkDurationMs: Double = 100.0
+    static let samplesPerChunk: AVAudioFrameCount = AVAudioFrameCount(sampleRate * chunkDurationMs / 1000.0)
 }
 
 /// Identifies the audio source for speaker labeling
@@ -20,205 +24,343 @@ protocol AudioCaptureDelegate: AnyObject {
     func audioCaptureManager(_ manager: AudioCaptureManager, deviceChanged deviceUID: String?, for source: AudioSource)
 }
 
-/// Manages multi-source audio capture (Microphone + System Audio via Virtual Device) using AVCaptureSession
-final class AudioCaptureManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+/// Manages dual audio capture from microphone and system audio (via virtual device)
+final class AudioCaptureManager {
+    
+    // MARK: - Properties
     
     weak var delegate: AudioCaptureDelegate?
     
-    private let virtualDeviceUID: String
-    private var captureSession: AVCaptureSession?
+    private let micEngine = AVAudioEngine()
+    private let systemEngine = AVAudioEngine()
     
-    private var micInput: AVCaptureDeviceInput?
-    private var systemInput: AVCaptureDeviceInput?
+    private var micConverter: AVAudioConverter?
+    private var systemConverter: AVAudioConverter?
     
     private let processingQueue = DispatchQueue(label: "com.copilot.audio.processing", qos: .userInteractive)
     
-    private var isRunning = false
-    private var isPaused = false
+    private var isCapturing = false
+    private let stateLock = NSLock()
     
-    private var audioConverter: AudioConverterRef?
-    private var sourceBuffer = UnsafeMutableRawPointer.allocate(byteCount: 32768, alignment: 16)
+    /// Virtual audio device UID (e.g., BlackHole)
+    /// TODO: Make configurable or auto-detect
+    private let virtualDeviceUID: String
+    
+    // MARK: - Target Format
+    
+    private lazy var targetFormat: AVAudioFormat = {
+        AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: AudioConstants.sampleRate,
+            channels: AudioConstants.channelCount,
+            interleaved: true
+        )!
+    }()
+    
+    // MARK: - Initialization
     
     init(virtualDeviceUID: String = "BlackHole2ch_UID") {
         self.virtualDeviceUID = virtualDeviceUID
-        super.init()
-        setupSession()
+        setupDeviceChangeNotifications()
     }
     
     deinit {
         stop()
-        sourceBuffer.deallocate()
+        NotificationCenter.default.removeObserver(self)
     }
     
-    private func setupSession() {
-        let session = AVCaptureSession()
-        session.beginConfiguration()
-        
-        // 1. Setup Microphone
-        if let mic = AVCaptureDevice.default(for: .audio) {
-            do {
-                let input = try AVCaptureDeviceInput(device: mic)
-                if session.canAddInput(input) {
-                    session.addInput(input)
-                    self.micInput = input
-                    Logger.log("Microphone added: \(mic.localizedName)", level: .info)
-                }
-            } catch {
-                Logger.log("AudioCapture: Failed to setup mic: \(error)", level: .error)
-            }
-        }
-        
-        // 2. Setup System Audio (via BlackHole/Virtual Device)
-        if let systemDevice = findDevice(byUID: virtualDeviceUID) {
-            do {
-                let input = try AVCaptureDeviceInput(device: systemDevice)
-                if session.canAddInput(input) {
-                    session.addInput(input)
-                    self.systemInput = input
-                    Logger.log("System audio added: \(systemDevice.localizedName)", level: .info)
-                }
-            } catch {
-                Logger.log("AudioCapture: Failed to setup system audio: \(error)", level: .error)
-            }
-        } else {
-            Logger.log("AudioCapture: Virtual device \(virtualDeviceUID) not found.", level: .warning)
-        }
-        
-        // 3. Setup Output
-        let output = AVCaptureAudioDataOutput()
-        output.setSampleBufferDelegate(self, queue: processingQueue)
-        
-        if session.canAddOutput(output) {
-            session.addOutput(output)
-        }
-        
-        session.commitConfiguration()
-        self.captureSession = session
-    }
-    
-    private func findDevice(byUID uid: String) -> AVCaptureDevice? {
-        let devices = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInMicrophone, .externalUnknown],
-            mediaType: .audio,
-            position: .unspecified
-        ).devices
-        
-        return devices.first { $0.uniqueID == uid }
-    }
+    // MARK: - Public Methods
     
     func start() throws {
-        guard !isRunning, let session = captureSession else { return }
+        stateLock.lock()
+        defer { stateLock.unlock() }
         
-        processingQueue.async {
-            session.startRunning()
-            self.isRunning = true
-            Logger.log("AudioCaptureManager session started", level: .info)
+        guard !isCapturing else { return }
+        
+        var micStarted = false
+        var systemStarted = false
+        
+        // Try to start microphone (should always work if permission granted)
+        do {
+            try configureMicrophonePipeline()
+            try micEngine.start()
+            micStarted = true
+            Logger.log("Microphone capture started", level: .info)
+        } catch {
+            Logger.log("Microphone capture failed: \(error)", level: .error)
         }
+        
+        // Try to start system audio (may fail if BlackHole not installed)
+        do {
+            try configureSystemAudioPipeline()
+            try systemEngine.start()
+            systemStarted = true
+            Logger.log("System audio capture started", level: .info)
+        } catch {
+            Logger.log("System audio capture failed: \(error)", level: .warning)
+            Logger.log("Install BlackHole for system audio: brew install blackhole-2ch", level: .info)
+        }
+        
+        // At least one source must work
+        guard micStarted || systemStarted else {
+            throw AudioCaptureError.invalidInputFormat
+        }
+        
+        isCapturing = true
+        Logger.log("AudioCaptureManager started (mic: \(micStarted), system: \(systemStarted))", level: .info)
     }
     
     func stop() {
-        guard isRunning, let session = captureSession else { return }
-        processingQueue.async {
-            session.stopRunning()
-            self.isRunning = false
-            Logger.log("AudioCaptureManager session stopped", level: .info)
-        }
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        
+        guard isCapturing else { return }
+        
+        micEngine.stop()
+        systemEngine.stop()
+        
+        micEngine.inputNode.removeTap(onBus: 0)
+        systemEngine.inputNode.removeTap(onBus: 0)
+        
+        isCapturing = false
+        Logger.log("AudioCaptureManager stopped", level: .info)
     }
     
     func pause() {
-        isPaused = true
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        
+        micEngine.pause()
+        systemEngine.pause()
+        Logger.log("AudioCaptureManager paused", level: .info)
     }
     
     func resume() throws {
-        isPaused = false
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        
+        try micEngine.start()
+        try systemEngine.start()
+        Logger.log("AudioCaptureManager resumed", level: .info)
     }
     
-    // MARK: - AVCaptureAudioDataOutputSampleBufferDelegate
+    // MARK: - Private Methods
     
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard !isPaused else { return }
+    private func configureMicrophonePipeline() throws {
+        let inputNode = micEngine.inputNode
         
-        // Identify source
-        var source: AudioSource = .microphone
-        // Trace back the connection to the input port
-        if let inputPort = connection.inputPorts.first,
-           let input = inputPort.input as? AVCaptureDeviceInput {
-            if input == systemInput {
-                source = .systemAudio
+        // Enable echo cancellation (Voice Processing I/O)
+        // This prevents the mic from picking up the interviewer's voice from speakers
+        if #available(macOS 11.0, *) {
+            do {
+                try inputNode.setVoiceProcessingEnabled(true)
+                Logger.log("Voice processing (echo cancellation) enabled", level: .info)
+            } catch {
+                Logger.log("Failed to enable voice processing: \(error)", level: .warning)
             }
         }
         
-        // Extract Data
-        guard let pcmData = convertToTargetFormat(sampleBuffer) else { return }
+        let inputFormat = inputNode.outputFormat(forBus: 0)
         
-        // RMS Logging for debugging
-        let rms = pcmData.withUnsafeBytes { buffer -> Double in
-            guard let ptr = buffer.bindMemory(to: Int16.self).baseAddress else { return 0 }
-            let count = pcmData.count / 2
-            if count == 0 { return 0 }
-            var sum: Double = 0
-            // Optimization: sample every 10th frame for logging speed
-            let stride = 10
-            let loopCount = count / stride
-            if loopCount == 0 { return 0 }
+        guard inputFormat.sampleRate > 0 else {
+            throw AudioCaptureError.invalidInputFormat
+        }
+        
+        // Create converter for sample rate and format conversion
+        micConverter = AVAudioConverter(from: inputFormat, to: targetFormat)
+        guard let converter = micConverter else {
+            throw AudioCaptureError.converterCreationFailed
+        }
+        
+        // Calculate buffer size for ~100ms chunks at input sample rate
+        let inputBufferSize = AVAudioFrameCount(inputFormat.sampleRate * AudioConstants.chunkDurationMs / 1000.0)
+        
+        inputNode.installTap(onBus: 0, bufferSize: inputBufferSize, format: inputFormat) { [weak self] buffer, time in
+            self?.processAudioBuffer(buffer, converter: converter, source: .microphone)
+        }
+    }
+    
+    private func configureSystemAudioPipeline() throws {
+        // Find and set the virtual audio device as input
+        try setInputDevice(uid: virtualDeviceUID, for: systemEngine)
+        
+        let inputNode = systemEngine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+        
+        guard inputFormat.sampleRate > 0 else {
+            throw AudioCaptureError.invalidInputFormat
+        }
+        
+        systemConverter = AVAudioConverter(from: inputFormat, to: targetFormat)
+        guard let converter = systemConverter else {
+            throw AudioCaptureError.converterCreationFailed
+        }
+        
+        let inputBufferSize = AVAudioFrameCount(inputFormat.sampleRate * AudioConstants.chunkDurationMs / 1000.0)
+        
+        inputNode.installTap(onBus: 0, bufferSize: inputBufferSize, format: inputFormat) { [weak self] buffer, time in
+            self?.processAudioBuffer(buffer, converter: converter, source: .systemAudio)
+        }
+    }
+    
+    private func setInputDevice(uid: String, for engine: AVAudioEngine) throws {
+        var deviceID: AudioDeviceID = 0
+        var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        
+        // Get device ID from UID
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        var uidCF = uid as CFString
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            UInt32(MemoryLayout<CFString>.size),
+            &uidCF,
+            &propertySize,
+            &deviceID
+        )
+        
+        guard status == noErr, deviceID != 0 else {
+            throw AudioCaptureError.deviceNotFound(uid: uid)
+        }
+        
+        // Set as input device for the engine's audio unit
+        let audioUnit = engine.inputNode.audioUnit!
+        var enableIO: UInt32 = 1
+        
+        // Enable input
+        AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_EnableIO,
+            kAudioUnitScope_Input,
+            1,
+            &enableIO,
+            UInt32(MemoryLayout<UInt32>.size)
+        )
+        
+        // Set device
+        AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &deviceID,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+    }
+    
+    private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, converter: AVAudioConverter, source: AudioSource) {
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
             
-            for i in 0..<loopCount {
-                let sample = Double(ptr[i * stride])
-                sum += sample * sample
+            do {
+                let convertedData = try self.convertToTargetFormat(buffer: buffer, converter: converter)
+                // Logger.log("Audio converted \(source.rawValue): \(convertedData.count) bytes", level: .debug)
+                self.delegate?.audioCaptureManager(self, didCapture: convertedData, from: source)
+            } catch {
+                Logger.log("Audio conversion error \(source.rawValue): \(error)", level: .error)
+                self.delegate?.audioCaptureManager(self, didEncounterError: error, from: source)
             }
-            return sqrt(sum / Double(loopCount))
         }
-        
-        if rms > 10 { // Only log valid signal
-             Logger.log("Captured \(source.rawValue): \(pcmData.count) bytes, RMS: \(String(format: "%.1f", rms))", level: .info)
-        }
-        
-        delegate?.audioCaptureManager(self, didCapture: pcmData, from: source)
     }
     
-    private func convertToTargetFormat(_ sampleBuffer: CMSampleBuffer) -> Data? {
-        // Needs proper resampling/conversion logic using AudioConverter
-        // For now, let's assume raw extraction if format is compatible, or basic conversion.
-        // Implementing full AudioConverter for CMSampleBuffer is verbose.
-        // Simplified approach: Extract buffer, check format. If roughly same, return.
+    private func convertToTargetFormat(buffer: AVAudioPCMBuffer, converter: AVAudioConverter) throws -> Data {
+        let frameCapacity = AVAudioFrameCount(
+            Double(buffer.frameLength) * AudioConstants.sampleRate / buffer.format.sampleRate
+        )
         
-        guard let blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer),
-              let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else { return nil }
-        
-        let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)?.pointee
-        
-        // Helper: Direct extraction (works if input is already PCM)
-        var length = 0
-        var dataPointer: UnsafeMutablePointer<Int8>?
-        
-        let status = CMBlockBufferGetDataPointer(blockBuffer, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &dataPointer)
-        
-        if status == kCMBlockBufferNoErr, let pointer = dataPointer {
-             // If input is Float32, convert to Int16
-             if let asbd = asbd, asbd.mFormatFlags & kAudioFormatFlagIsFloat != 0, asbd.mBitsPerChannel == 32 {
-                 // Float to Int16 Conversion
-                 let floatCount = length / 4
-                 let floatBuffer = UnsafeMutablePointer<Float>(OpaquePointer(pointer))
-                 
-                 var pcmData = Data(count: floatCount * 2)
-                 pcmData.withUnsafeMutableBytes { targetBuffer in
-                     let targetPtr = targetBuffer.bindMemory(to: Int16.self).baseAddress!
-                     for i in 0..<floatCount {
-                         let f = floatBuffer[i]
-                         // Clamp and scale
-                         var v = f * 32767.0
-                         if v > 32767.0 { v = 32767.0 }
-                         if v < -32768.0 { v = -32768.0 }
-                         targetPtr[i] = Int16(v)
-                     }
-                 }
-                 return pcmData
-             } else {
-                 // Assume Int16 or compatible
-                 return Data(bytes: pointer, count: length)
-             }
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCapacity) else {
+            throw AudioCaptureError.bufferCreationFailed
         }
         
-        return nil
+        var error: NSError?
+        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        let status = converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+        
+        if let error = error {
+            throw error
+        }
+        
+        // Fix: Ensure we actually got data
+        guard status != .error && outputBuffer.frameLength > 0 else {
+            // Return empty data instead of throwing if it's just a momentary gap
+            return Data()
+        }
+        
+        // Extract PCM data as Int16
+        guard let int16Data = outputBuffer.int16ChannelData else {
+            throw AudioCaptureError.invalidOutputFormat
+        }
+        
+        let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
+        return Data(bytes: int16Data[0], count: byteCount)
+    }
+    
+    // MARK: - Device Change Handling
+    
+    private func setupDeviceChangeNotifications() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleConfigurationChange),
+            name: .AVAudioEngineConfigurationChange,
+            object: nil
+        )
+    }
+    
+    @objc private func handleConfigurationChange(_ notification: Notification) {
+        // Only handle if we're actually capturing and it's our engine
+        guard isCapturing else { return }
+        
+        // Check which engine triggered the change
+        let triggeredByMic = notification.object as? AVAudioEngine === micEngine
+        let triggeredBySystem = notification.object as? AVAudioEngine === systemEngine
+        
+        guard triggeredByMic || triggeredBySystem else { return }
+        
+        Logger.log("Audio configuration changed (mic: \(triggeredByMic), system: \(triggeredBySystem))", level: .warning)
+        Logger.log("Engine states - Mic: \(micEngine.isRunning), System: \(systemEngine.isRunning)", level: .warning)
+        
+        // Don't auto-restart - this can cause cascading crashes
+        // Instead, mark as needing manual restart
+        Logger.log("Audio capture may need restart. Use pause/resume or restart the service.", level: .warning)
+    }
+}
+
+// MARK: - Errors
+
+enum AudioCaptureError: Error, LocalizedError {
+    case invalidInputFormat
+    case converterCreationFailed
+    case bufferCreationFailed
+    case conversionFailed
+    case invalidOutputFormat
+    case deviceNotFound(uid: String)
+    case permissionDenied
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidInputFormat:
+            return "Invalid input audio format"
+        case .converterCreationFailed:
+            return "Failed to create audio converter"
+        case .bufferCreationFailed:
+            return "Failed to create output buffer"
+        case .conversionFailed:
+            return "Audio conversion failed"
+        case .invalidOutputFormat:
+            return "Invalid output format"
+        case .deviceNotFound(let uid):
+            return "Audio device not found: \(uid)"
+        case .permissionDenied:
+            return "Microphone permission denied"
+        }
     }
 }

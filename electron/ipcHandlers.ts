@@ -8,7 +8,17 @@ export function initializeIpcHandlers(appState: AppState): void {
   ipcMain.handle(
     "update-content-dimensions",
     async (event, { width, height }: { width: number; height: number }) => {
-      if (width && height) {
+      if (!width || !height) return
+
+      const senderWebContents = event.sender
+      const settingsWin = appState.settingsWindowHelper.getSettingsWindow()
+      const advancedWin = appState.settingsWindowHelper.getAdvancedWindow()
+
+      if (settingsWin && !settingsWin.isDestroyed() && settingsWin.webContents.id === senderWebContents.id) {
+        appState.settingsWindowHelper.setWindowDimensions(settingsWin, width, height)
+      } else if (advancedWin && !advancedWin.isDestroyed() && advancedWin.webContents.id === senderWebContents.id) {
+        appState.settingsWindowHelper.setWindowDimensions(advancedWin, width, height)
+      } else {
         appState.setWindowDimensions(width, height)
       }
     }

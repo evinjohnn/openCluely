@@ -41,9 +41,35 @@ const SettingsPopup = () => {
         }
     }, [useGeminiPro]);
 
+    const contentRef = useRef<HTMLDivElement>(null);
+
+    // Auto-resize Window
+    useLayoutEffect(() => {
+        if (!contentRef.current) return;
+
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const rect = entry.target.getBoundingClientRect();
+                // Send exact dimensions to Electron
+                try {
+                    // @ts-ignore
+                    window.electronAPI?.updateContentDimensions({
+                        width: Math.ceil(rect.width),
+                        height: Math.ceil(rect.height)
+                    });
+                } catch (e) {
+                    console.warn("Failed to update dimensions", e);
+                }
+            }
+        });
+
+        observer.observe(contentRef.current);
+        return () => observer.disconnect();
+    }, []);
+
     return (
-        <div className="w-fit h-fit bg-transparent p-0 flex flex-col">
-            <div className="w-[260px] bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-hidden shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
+        <div className="w-fit h-fit bg-transparent flex flex-col">
+            <div ref={contentRef} className="w-[225px] bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-hidden shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
 
                 {/* Undetectability */}
                 <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-default">
@@ -88,7 +114,7 @@ const SettingsPopup = () => {
                 <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-pointer interaction-base interaction-press">
                     <div className="flex items-center gap-3">
                         <MessageSquare className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-colors" />
-                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200 transition-colors">Show/Hide Natively</span>
+                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200 transition-colors">Show/Hide</span>
                     </div>
                     <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                         <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">⌘</div>

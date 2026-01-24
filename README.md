@@ -1,7 +1,7 @@
 
 # Natively
 
-[Natively](https://natively.com) - The invisible desktop assistant that provides real-time insights, answers, and support during meetings, interviews, presentations, and professional conversations.
+[Natively](https://natively.com) - The invisible desktop assistant that provides real-time insights, answers, and support during meetings, interviews, presentations, and professional conversations.  
 
 
 ## 🚀 Quick Start Guide

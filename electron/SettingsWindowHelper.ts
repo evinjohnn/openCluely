@@ -11,6 +11,24 @@ export class SettingsWindowHelper {
     private settingsWindow: BrowserWindow | null = null
     private advancedWindow: BrowserWindow | null = null
 
+    public getSettingsWindow(): BrowserWindow | null {
+        return this.settingsWindow
+    }
+
+    public getAdvancedWindow(): BrowserWindow | null {
+        return this.advancedWindow
+    }
+
+    public setWindowDimensions(win: BrowserWindow, width: number, height: number): void {
+        if (!win || win.isDestroyed() || !win.isVisible()) return
+
+        const currentBounds = win.getBounds()
+        // Only update if dimensions actually change (avoid infinite loops)
+        if (currentBounds.width === width && currentBounds.height === height) return
+
+        win.setSize(width, height)
+    }
+
     // Store offsets relative to main window
     private offsetX: number = 0
     private offsetY: number = 0
@@ -134,14 +152,15 @@ export class SettingsWindowHelper {
 
     private createWindow(x?: number, y?: number): void {
         const windowSettings: Electron.BrowserWindowConstructorOptions = {
-            width: 270, // Increased for better proportions
-            height: 280,
+            width: 225, // Match React component width
+            height: 205, // Start smaller to avoid "long shadow" empty space, let ResizeObserver expand it
             frame: false,
             transparent: true,
             resizable: false,
             fullscreenable: false,
             hasShadow: false,
             alwaysOnTop: true,
+            backgroundColor: "#00000000",
             show: false,
             skipTaskbar: true,
             webPreferences: {
@@ -203,6 +222,7 @@ export class SettingsWindowHelper {
             fullscreenable: false,
             hasShadow: false,
             alwaysOnTop: true,
+            backgroundColor: "#00000000",
             show: false,
             skipTaskbar: true,
             parent: this.settingsWindow, // Make it a child of settings? Or independent? Independent is safer for now.
