@@ -5,7 +5,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { MODE_CONFIGS } from "./types";
 import { ANSWER_MODE_PROMPT, buildContents } from "./prompts";
-import { clampResponse } from "./postProcessor";
 
 const GEMINI_FLASH_MODEL = "gemini-3-flash-preview";
 
@@ -23,7 +22,7 @@ export class AnswerLLM {
      * Generate a spoken interview answer
      * @param question - The interviewer's question
      * @param context - Optional conversation context
-     * @returns Clean, clamped spoken answer
+     * @returns Spoken answer (no post-clamp; prompt enforces brevity)
      */
     async generate(question: string, context?: string): Promise<string> {
         try {
@@ -44,8 +43,7 @@ export class AnswerLLM {
                 || response.candidates?.[0]?.content?.parts?.[0]?.text
                 || "";
 
-            // Apply hard post-processing clamp
-            return clampResponse(rawText, 3, 60);
+            return rawText.trim();
 
         } catch (error) {
             // Silent failure - return empty for safety

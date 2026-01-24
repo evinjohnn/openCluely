@@ -5,7 +5,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { MODE_CONFIGS } from "./types";
 import { ASSIST_MODE_PROMPT, buildContents } from "./prompts";
-import { clampResponse } from "./postProcessor";
 
 const GEMINI_FLASH_MODEL = "gemini-3-flash-preview";
 
@@ -22,7 +21,7 @@ export class AssistLLM {
     /**
      * Generate passive observational insight
      * @param context - Current conversation context
-     * @returns Brief insight (1-2 sentences)
+     * @returns Insight (no post-clamp; prompt enforces brevity)
      */
     async generate(context: string): Promise<string> {
         try {
@@ -51,8 +50,7 @@ export class AssistLLM {
                 || response.candidates?.[0]?.content?.parts?.[0]?.text
                 || "";
 
-            // Assist mode: max 2 sentences, 40 words
-            return clampResponse(rawText, 2, 40);
+            return rawText.trim();
 
         } catch (error) {
             console.error("[AssistLLM] Generation failed:", error);

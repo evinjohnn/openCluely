@@ -10,6 +10,7 @@ interface OllamaResponse {
 // Model constant for Gemini 3 Flash
 const GEMINI_FLASH_MODEL = "gemini-3-flash-preview"
 const GEMINI_PRO_MODEL = "gemini-3-pro-preview"
+const MAX_OUTPUT_TOKENS = 65536
 
 // Simple prompt for image analysis (not interview copilot - kept separate)
 const IMAGE_ANALYSIS_PROMPT = `Analyze concisely. Be direct. No markdown formatting. Return plain text only.`
@@ -137,7 +138,7 @@ export class LLMHelper {
       model: GEMINI_FLASH_MODEL,
       contents: contents,
       config: {
-        maxOutputTokens: 256,  // Short responses for speed
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
         temperature: 0.3,      // Lower = faster, more focused
       }
     })
@@ -156,7 +157,7 @@ export class LLMHelper {
       model: GEMINI_FLASH_MODEL,
       contents: contents,
       config: {
-        maxOutputTokens: 2048,  // Increased to prevent truncation (user request)
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
         temperature: 0.3,      // Lower = faster, more focused
       }
     })
@@ -224,7 +225,7 @@ export class LLMHelper {
         model: this.geminiModel,
         contents: contents,
         config: {
-          maxOutputTokens: 4096, // Increased to max to ensure complete responses (user request)
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
           temperature: 0.4,
         }
       });

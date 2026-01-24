@@ -37,7 +37,7 @@ export class WhatToAnswerLLM {
                 model: this.modelName,
                 contents: contents,
                 config: {
-                    maxOutputTokens: 1024,  // Increased to prevent truncation
+                    maxOutputTokens: 65536,
                     temperature: 0.3,
                     topP: 0.9,
                 },

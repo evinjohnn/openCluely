@@ -757,7 +757,7 @@ Provide only the answer, nothing else.`;
 
                         {/* Chat History - Only show if there are messages */}
                         {messages.length > 0 && (
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[350px]" style={{ scrollbarWidth: 'none' }}>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ scrollbarWidth: 'none' }}>
                                 {messages.map((msg) => (
                                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
                                         <div className={`
