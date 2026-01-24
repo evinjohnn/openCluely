@@ -515,9 +515,17 @@ ANSWER DIRECTLY:`;
         }
         return "I apologize, but I couldn't generate a response. Please try again.";
       }
-    } catch (error) {
-      console.error("[LLMHelper] Error in chatWithGemini:", error);
-      throw error;
+    } catch (error: any) {
+      console.error("[LLMHelper] Critical Error in chatWithGemini:", error);
+
+      // Return specific English error messages for the UI
+      if (error.message.includes("503") || error.message.includes("overloaded")) {
+        return "The AI service is currently overloaded. Please try again in a moment.";
+      }
+      if (error.message.includes("API key")) {
+        return "Authentication failed. Please check your API key in settings.";
+      }
+      return `I encountered an error: ${error.message || "Unknown error"}. Please try again.`;
     }
   }
 
@@ -626,65 +634,89 @@ ANSWER DIRECTLY:`;
   }
 
   /**
-   * ROBUST GENERATION STRATEGY
-   * 1. Attempt with original model (Flash)
-   * 2. Retry Flash on 503/Overload (100ms, 400ms, 600ms)
-   * 3. Fallback to Gemini 3 Pro (Single shot) if Flash fails
+   * ROBUST GENERATION STRATEGY (SPECULATIVE PARALLEL EXECUTION)
+   * 1. Attempt with original model (Flash).
+   * 2. If it fails/empties:
+   *    - IMMEDIATELY launch two requests in parallel:
+   *      a) Retry Flash (Attempt 2)
+   *      b) Start Pro (Backup)
+   * 3. Return whichever finishes successfully first (prioritizing Flash if both fast).
+   * 4. If both fail, try Flash one last time (Attempt 3).
+   * 5. If that fails, throw error.
    */
   private async generateWithFallback(client: GoogleGenAI, args: any): Promise<any> {
     const GEMINI_PRO_MODEL = "gemini-3-pro-preview";
     const originalModel = args.model;
 
-    // Retry delays in ms
-    const RETRY_DELAYS = [100, 400, 600];
-
-    // Helper to check for overload errors
-    const isOverload = (error: any) => {
-      const msg = error.message?.toLowerCase() || "";
-      const status = error.status || 0;
-      return status === 503 ||
-        msg.includes("503") ||
-        msg.includes("overloaded") ||
-        msg.includes("busy") ||
-        msg.includes("service unavailable");
+    // Helper to check for valid content
+    const isValidResponse = (response: any) => {
+      const candidate = response.candidates?.[0];
+      if (!candidate) return false;
+      // Check for text content
+      if (response.text && response.text.trim().length > 0) return true;
+      if (candidate.content?.parts?.[0]?.text && candidate.content.parts[0].text.trim().length > 0) return true;
+      if (typeof candidate.content === 'string' && candidate.content.trim().length > 0) return true;
+      return false;
     };
 
-    // 1. Attempt Flash with Retries
-    for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
-      try {
-        // Use original requested model (Flash)
-        return await client.models.generateContent({
-          ...args,
-          model: originalModel
-        });
-      } catch (error: any) {
-        // If not an overload error, throw immediately (auth, invalid prompt, etc)
-        if (!isOverload(error)) throw error;
-
-        // If we have retries left, wait and retry
-        if (attempt < RETRY_DELAYS.length) {
-          const delay = RETRY_DELAYS[attempt];
-          // console.warn(`[LLMHelper] Flash overloaded (Attempt ${attempt+1}). Retrying in ${delay}ms...`);
-          await new Promise(r => setTimeout(r, delay));
-          continue;
-        }
-
-        // If we ran out of retries, verify valid fallback scenario
-        console.warn(`[LLMHelper] Flash failed after 3 retries. Switching to fallback.`);
-      }
+    // 1. Initial Attempt (Flash)
+    try {
+      const response = await client.models.generateContent({
+        ...args,
+        model: originalModel
+      });
+      if (isValidResponse(response)) return response;
+      console.warn(`[LLMHelper] Initial ${originalModel} call returned empty/invalid response.`);
+    } catch (error: any) {
+      console.warn(`[LLMHelper] Initial ${originalModel} call failed: ${error.message}`);
     }
 
-    // 2. Fallback to Pro (Single Attempt)
+    console.log(`[LLMHelper] 🚀 Triggering Speculative Parallel Retry (Flash + Pro)...`);
+
+    // 2. Parallel Execution (Retry Flash vs Pro)
+    // We create promises for both but treat them carefully
+    const flashRetryPromise = (async () => {
+      // Small delay before retry to let system settle? No, user said "immediately"
+      try {
+        const res = await client.models.generateContent({ ...args, model: originalModel });
+        if (isValidResponse(res)) return { type: 'flash', res };
+        throw new Error("Empty Flash Response");
+      } catch (e) { throw e; }
+    })();
+
+    const proBackupPromise = (async () => {
+      try {
+        // Pro might be slower, but it's the robust backup
+        const res = await client.models.generateContent({ ...args, model: GEMINI_PRO_MODEL });
+        if (isValidResponse(res)) return { type: 'pro', res };
+        throw new Error("Empty Pro Response");
+      } catch (e) { throw e; }
+    })();
+
+    // 3. Race / Fallback Logic
     try {
-      console.log(`[LLMHelper] 🚨 Fallback triggered: Using ${GEMINI_PRO_MODEL}`);
-      return await client.models.generateContent({
-        ...args,
-        model: GEMINI_PRO_MODEL
-      });
-    } catch (fallbackError: any) {
-      // If Pro also fails, we must throw
-      console.error(`[LLMHelper] Fallback failed:`, fallbackError);
-      throw fallbackError;
+      // We want Flash if it succeeds, but will accept Pro if Flash fails
+      // If Flash finishes first and success -> return Flash
+      // If Pro finishes first -> wait for Flash? Or return Pro?
+      // User said: "if the gemini 3 flash again fails the gemini 3 pro response can be immediatly displayed"
+      // This implies we prioritize Flash's *result*, but if Flash fails, we want Pro.
+
+      // We use Promise.any to get the first *successful* result
+      const winner = await Promise.any([flashRetryPromise, proBackupPromise]);
+      console.log(`[LLMHelper] Parallel race won by: ${winner.type}`);
+      return winner.res;
+
+    } catch (aggregateError) {
+      console.warn(`[LLMHelper] Both parallel retry attempts failed.`);
+    }
+
+    // 4. Last Resort: Flash Final Retry
+    console.log(`[LLMHelper] ⚠️ All parallel attempts failed. Trying Flash one last time...`);
+    try {
+      return await client.models.generateContent({ ...args, model: originalModel });
+    } catch (finalError) {
+      console.error(`[LLMHelper] Final retry failed.`);
+      throw finalError;
     }
   }
 

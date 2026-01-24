@@ -43,7 +43,7 @@ export class SettingsWindowHelper {
     public preloadWindow(): void {
         if (!this.settingsWindow || this.settingsWindow.isDestroyed()) {
             // Create window off-screen so it's ready but not visible
-            this.createWindow(-10000, -10000);
+            this.createWindow(-10000, -10000, false);
         }
     }
 
@@ -150,7 +150,7 @@ export class SettingsWindowHelper {
         }
     }
 
-    private createWindow(x?: number, y?: number): void {
+    private createWindow(x?: number, y?: number, showWhenReady: boolean = true): void {
         const windowSettings: Electron.BrowserWindowConstructorOptions = {
             width: 225, // Match React component width
             height: 205, // Start smaller to avoid "long shadow" empty space, let ResizeObserver expand it
@@ -188,7 +188,9 @@ export class SettingsWindowHelper {
         this.settingsWindow.loadURL(settingsUrl)
 
         this.settingsWindow.once('ready-to-show', () => {
-            this.settingsWindow?.show()
+            if (showWhenReady) {
+                this.settingsWindow?.show()
+            }
         })
 
         // Hide on blur instead of close, to keep state? 
