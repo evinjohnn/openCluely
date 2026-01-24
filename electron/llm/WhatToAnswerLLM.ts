@@ -1,8 +1,3 @@
-// electron/llm/WhatToAnswerLLM.ts
-// MODE: "What to Answer" - Manual trigger for interview copilot
-// Single-pass question inference + answer generation
-// NEVER returns empty - always provides a usable response
-
 import { GoogleGenAI } from "@google/genai";
 import { WHAT_TO_ANSWER_PROMPT, buildWhatToAnswerContents } from "./prompts";
 

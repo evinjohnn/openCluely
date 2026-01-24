@@ -1,7 +1,3 @@
-// electron/llm/AnswerLLM.ts
-// MODE: "What should I say" - Primary auto-answer for interviews
-// Generates ready-to-speak first-person responses
-
 import { GoogleGenAI } from "@google/genai";
 import { MODE_CONFIGS } from "./types";
 import { ANSWER_MODE_PROMPT, buildContents } from "./prompts";
