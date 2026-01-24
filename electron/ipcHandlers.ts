@@ -150,6 +150,51 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
   });
 
+  // Streaming IPC Handler
+  ipcMain.handle("gemini-chat-stream", async (event, message: string, imagePath?: string, context?: string) => {
+    try {
+      console.log("[IPC] gemini-chat-stream started");
+      const llmHelper = appState.processingHelper.getLLMHelper();
+
+      // Update IntelligenceManager with USER message immediately
+      const intelligenceManager = appState.getIntelligenceManager();
+      intelligenceManager.addTranscript({
+        text: message,
+        speaker: 'user',
+        timestamp: Date.now(),
+        final: true
+      }, true);
+
+      let fullResponse = "";
+
+      try {
+        const stream = llmHelper.streamChatWithGemini(message, imagePath, context);
+
+        for await (const token of stream) {
+          event.sender.send("gemini-stream-token", token);
+          fullResponse += token;
+        }
+
+        event.sender.send("gemini-stream-done");
+
+        // Update IntelligenceManager with ASSISTANT message after completion
+        if (fullResponse.trim().length > 0) {
+          intelligenceManager.addAssistantMessage(fullResponse);
+        }
+
+      } catch (streamError: any) {
+        console.error("[IPC] Streaming error:", streamError);
+        event.sender.send("gemini-stream-error", streamError.message || "Unknown streaming error");
+      }
+
+      return null; // Return null as data is sent via events
+
+    } catch (error: any) {
+      console.error("[IPC] Error in gemini-chat-stream setup:", error);
+      throw error;
+    }
+  });
+
   ipcMain.handle("quit-app", () => {
     app.quit()
   })

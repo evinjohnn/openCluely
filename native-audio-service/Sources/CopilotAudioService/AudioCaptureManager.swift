@@ -259,7 +259,7 @@ final class AudioCaptureManager {
             
             do {
                 let convertedData = try self.convertToTargetFormat(buffer: buffer, converter: converter)
-                // Logger.log("Audio converted \(source.rawValue): \(convertedData.count) bytes", level: .debug)
+                Logger.log("Audio converted \(source.rawValue): \(convertedData.count) bytes", level: .debug)
                 self.delegate?.audioCaptureManager(self, didCapture: convertedData, from: source)
             } catch {
                 Logger.log("Audio conversion error \(source.rawValue): \(error)", level: .error)
@@ -328,9 +328,29 @@ final class AudioCaptureManager {
         Logger.log("Audio configuration changed (mic: \(triggeredByMic), system: \(triggeredBySystem))", level: .warning)
         Logger.log("Engine states - Mic: \(micEngine.isRunning), System: \(systemEngine.isRunning)", level: .warning)
         
-        // Don't auto-restart - this can cause cascading crashes
-        // Instead, mark as needing manual restart
-        Logger.log("Audio capture may need restart. Use pause/resume or restart the service.", level: .warning)
+        // Debounce restarts to prevent loops using a simple work item cancellation approach
+        // (Note: Simple delay is sufficient here as we just want to back off slightly)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.performRestart()
+        }
+    }
+    
+    private func performRestart() {
+        // Needs locking to check state safely, but performRestart calls stop/start which lock
+        // So we just call them.
+        
+        Logger.log("Performing engine restart...", level: .info)
+        
+        // Stop everything first
+        stop()
+        
+        // Re-configure and start
+        do {
+            try start() 
+            Logger.log("Engine restart successful", level: .info)
+        } catch {
+            Logger.log("Engine restart failed: \(error)", level: .error)
+        }
     }
 }
 

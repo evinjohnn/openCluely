@@ -56,6 +56,58 @@ export class RecapLLM {
             return "";
         }
     }
+
+    /**
+     * Generate a neutral conversation summary (Streamed)
+     */
+    async *generateStream(context: string): AsyncGenerator<string> {
+        try {
+            if (!context.trim()) {
+                yield "";
+                return;
+            }
+
+            const contents = buildRecapContents(context);
+
+            console.log(`[RecapLLM] Starting stream with model: ${this.modelName}`);
+
+            const streamResult = await this.client.models.generateContentStream({
+                model: this.modelName,
+                contents: contents,
+                config: {
+                    maxOutputTokens: this.config.maxOutputTokens,
+                    temperature: this.config.temperature,
+                    topP: this.config.topP,
+                },
+            });
+
+            // @ts-ignore
+            const stream = streamResult.stream || streamResult;
+
+            for await (const chunk of stream) {
+                let text = "";
+                // Robust handling
+                if (typeof chunk.text === 'function') {
+                    text = chunk.text();
+                } else if (typeof chunk.text === 'string') {
+                    text = chunk.text;
+                } else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    text = chunk.candidates[0].content.parts[0].text;
+                }
+
+                if (text) {
+                    yield text;
+                }
+            }
+            // Note: We cannot easily clamp streaming response content (max 5 bullets) in real-time without buffering.
+            // For now, we rely on the prompt to be concise, or we let the UI clamp it.
+            // The prompt "Summarize in 3-5 bullet points" is usually strong enough.
+
+        } catch (error) {
+            console.error("[RecapLLM] Streaming generation failed:", error);
+            yield "";
+        }
+    }
 }
 
 /**
@@ -68,17 +120,16 @@ function clampRecapResponse(text: string): string {
 
     let result = text.trim();
 
-    // Remove headers
-    result = result.replace(/^#{1,6}\s+/gm, "");
+    // Remove headers only (Recap should just be bullets)
+    // result = result.replace(/^#{1,6}\s+/gm, ""); 
+    // Actually, maybe keep headers if the model uses them for sectioning? 
+    // But Recap prompt asks for bullets. Let's keep it simple and just limit lines.
 
-    // Remove bold/italic markdown but keep bullets
-    result = result.replace(/\*\*([^*]+)\*\*/g, "$1");
-    result = result.replace(/__([^_]+)__/g, "$1");
-
-    // Split by bullet points or newlines
+    // Split by newlines
     const lines = result.split(/\n/).filter(line => line.trim());
 
-    // Take at most 5 bullet points
+    // Take at most 5 non-empty lines (usually bullets)
+    // This assumes the model follows instructions reasonably well.
     const clamped = lines.slice(0, 5);
 
     return clamped.join("\n").trim();

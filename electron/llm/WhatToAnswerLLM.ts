@@ -24,6 +24,95 @@ export class WhatToAnswerLLM {
      * @param cleanedTranscript - Pre-processed transcript (cleaned + sparsified)
      * @returns Ready-to-speak answer, NEVER empty
      */
+    /**
+     * Generate a spoken interview answer from transcript context (Streamed)
+     */
+    async *generateStream(cleanedTranscript: string): AsyncGenerator<string> {
+        try {
+            // Handle empty/thin transcript gracefully
+            if (!cleanedTranscript || cleanedTranscript.trim().length < 10) {
+                const fallback = this.getFallbackAnswer();
+                yield fallback;
+                return;
+            }
+
+            const contents = buildWhatToAnswerContents(cleanedTranscript);
+
+            const streamResult = await this.client.models.generateContentStream({
+                model: this.modelName,
+                contents: contents,
+                config: {
+                    maxOutputTokens: 65536,
+                    temperature: 0.3,
+                    topP: 0.9,
+                },
+            });
+
+            // @ts-ignore
+            const stream = streamResult.stream || streamResult;
+
+            let buffer = "";
+            let prefixChecked = false;
+            // Common prefixes to strip
+            const prefixes = [
+                "Answer:", "Response:", "Suggestion:", "Here's what you could say:",
+                "You could say:", "Try saying:", "Say:", "Inferred question:",
+                "Based on the conversation,"
+            ];
+
+            for await (const chunk of stream) {
+                let text = "";
+                // Robust handling
+                if (typeof chunk.text === 'function') {
+                    text = chunk.text();
+                } else if (typeof chunk.text === 'string') {
+                    text = chunk.text;
+                } else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    text = chunk.candidates[0].content.parts[0].text;
+                }
+
+                if (!text) continue;
+
+                if (!prefixChecked) {
+                    buffer += text;
+                    // Wait for enough characters to check prefix, or just check what we have
+                    if (buffer.length > 50) {
+                        // Check prefix
+                        let content = buffer;
+                        for (const prefix of prefixes) {
+                            if (content.toLowerCase().startsWith(prefix.toLowerCase())) {
+                                content = content.substring(prefix.length).trimStart();
+                            }
+                        }
+                        // Strip markdown check (simplified for streaming - handled by UI mostly)
+
+                        yield content;
+                        buffer = "";
+                        prefixChecked = true;
+                    }
+                } else {
+                    yield text;
+                }
+            }
+
+            // Flush remaining buffer if verified
+            if (!prefixChecked && buffer.length > 0) {
+                let content = buffer;
+                for (const prefix of prefixes) {
+                    if (content.toLowerCase().startsWith(prefix.toLowerCase())) {
+                        content = content.substring(prefix.length).trimStart();
+                    }
+                }
+                yield content;
+            }
+
+        } catch (error) {
+            console.error("[WhatToAnswerLLM] Streaming generation failed:", error);
+            // Fallback for stream error
+            yield this.getFallbackAnswer();
+        }
+    }
+
     async generate(cleanedTranscript: string): Promise<string> {
         try {
             // Handle empty/thin transcript gracefully
@@ -97,17 +186,6 @@ export class WhatToAnswerLLM {
             return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
         });
 
-        // Strip markdown
-        result = result.replace(/^#{1,6}\s+/gm, "");
-        result = result.replace(/\*\*([^*]+)\*\*/g, "$1");
-        result = result.replace(/__([^_]+)__/g, "$1");
-        result = result.replace(/\*([^*]+)\*/g, "$1");
-        result = result.replace(/_([^_]+)_/g, "$1");
-        result = result.replace(/`([^`]+)`/g, "$1");
-        // Removed: result = result.replace(/```[\s\S]*?```/g, "");
-        result = result.replace(/^[\s]*[-*•]\s+/gm, "");
-        result = result.replace(/^[\s]*\d+\.\s+/gm, "");
-
         // Strip common prefixes/labels
         const prefixes = [
             "Answer:", "Response:", "Suggestion:", "Here's what you could say:",
@@ -120,13 +198,15 @@ export class WhatToAnswerLLM {
             }
         }
 
-        // Collapse whitespace
-        result = result.replace(/\n+/g, " ");
-        result = result.replace(/\s+/g, " ");
+        // Collapse excessive newlines but PRESERVE structure (max 2 newlines)
+        result = result.replace(/\n{3,}/g, "\n\n");
+        // Remove excessive spaces within lines
+        // result = result.replace(/[ \t]+/g, " "); // Be careful not to break indentation?
+        // Let's stick to just simple trimming of lines if needed, but standard markdown handles spaces well.
 
-        // Restore code blocks with newlines
+        // Restore code blocks
         codeBlocks.forEach((block, index) => {
-            result = result.replace(`__CODE_BLOCK_${index}__`, `\n${block}\n`);
+            result = result.replace(`__CODE_BLOCK_${index}__`, block);
         });
 
         return result.trim();

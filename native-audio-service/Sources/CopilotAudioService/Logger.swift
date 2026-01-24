@@ -12,7 +12,7 @@ enum LogLevel: String {
 enum Logger {
     
     /// Current minimum log level
-    static var minLevel: LogLevel = .info
+    static var minLevel: LogLevel = .debug
     
     /// Log a message
     static func log(_ message: String, level: LogLevel = .info, file: String = #file, line: Int = #line) {

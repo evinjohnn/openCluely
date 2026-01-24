@@ -78,6 +78,12 @@ interface ElectronAPI {
   showWindow: () => Promise<void>
   hideWindow: () => Promise<void>
   onToggleExpand: (callback: () => void) => () => void
+
+  // Streaming listeners
+  streamGeminiChat: (message: string, imagePath?: string, context?: string) => Promise<void>
+  onGeminiStreamToken: (callback: (token: string) => void) => () => void
+  onGeminiStreamDone: (callback: () => void) => () => void
+  onGeminiStreamError: (callback: (error: string) => void) => () => void
 }
 
 export const PROCESSING_EVENTS = {
@@ -325,11 +331,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.removeListener("intelligence-assist-update", subscription)
     }
   },
+  onIntelligenceSuggestedAnswerToken: (callback: (data: { token: string; question: string; confidence: number }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-suggested-answer-token", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-suggested-answer-token", subscription)
+    }
+  },
   onIntelligenceSuggestedAnswer: (callback: (data: { answer: string; question: string; confidence: number }) => void) => {
     const subscription = (_: any, data: any) => callback(data)
     ipcRenderer.on("intelligence-suggested-answer", subscription)
     return () => {
       ipcRenderer.removeListener("intelligence-suggested-answer", subscription)
+    }
+  },
+  onIntelligenceRefinedAnswerToken: (callback: (data: { token: string; intent: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-refined-answer-token", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-refined-answer-token", subscription)
     }
   },
   onIntelligenceRefinedAnswer: (callback: (data: { answer: string; intent: string }) => void) => {
@@ -339,11 +359,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.removeListener("intelligence-refined-answer", subscription)
     }
   },
+  onIntelligenceRecapToken: (callback: (data: { token: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-recap-token", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-recap-token", subscription)
+    }
+  },
   onIntelligenceRecap: (callback: (data: { summary: string }) => void) => {
     const subscription = (_: any, data: any) => callback(data)
     ipcRenderer.on("intelligence-recap", subscription)
     return () => {
       ipcRenderer.removeListener("intelligence-recap", subscription)
+    }
+  },
+  onIntelligenceFollowUpQuestionsToken: (callback: (data: { token: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-follow-up-questions-token", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-follow-up-questions-token", subscription)
     }
   },
   onIntelligenceFollowUpQuestionsUpdate: (callback: (data: { questions: string }) => void) => {
@@ -379,6 +413,34 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("intelligence-error", subscription)
     return () => {
       ipcRenderer.removeListener("intelligence-error", subscription)
+    }
+  },
+
+
+  // Streaming Chat
+  streamGeminiChat: (message: string, imagePath?: string, context?: string) => ipcRenderer.invoke("gemini-chat-stream", message, imagePath, context),
+
+  onGeminiStreamToken: (callback: (token: string) => void) => {
+    const subscription = (_: any, token: string) => callback(token)
+    ipcRenderer.on("gemini-stream-token", subscription)
+    return () => {
+      ipcRenderer.removeListener("gemini-stream-token", subscription)
+    }
+  },
+
+  onGeminiStreamDone: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("gemini-stream-done", subscription)
+    return () => {
+      ipcRenderer.removeListener("gemini-stream-done", subscription)
+    }
+  },
+
+  onGeminiStreamError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error)
+    ipcRenderer.on("gemini-stream-error", subscription)
+    return () => {
+      ipcRenderer.removeListener("gemini-stream-error", subscription)
     }
   },
 

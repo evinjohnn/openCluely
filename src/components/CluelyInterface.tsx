@@ -31,6 +31,9 @@ import ModelSelector from './ui/ModelSelector';
 import TopPill from './ui/TopPill';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 interface Message {
     id: string;
@@ -252,35 +255,202 @@ const NativelyInterface = () => {
 
 
 
+        cleanups.push(window.electronAPI.onIntelligenceSuggestedAnswerToken((data) => {
+            // Progressive update for 'what_to_answer' mode
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+
+                // If we already have a streaming message for this intent, append
+                if (lastMsg && lastMsg.isStreaming && lastMsg.intent === 'what_to_answer') {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: lastMsg.text + data.token
+                    };
+                    return updated;
+                }
+
+                // Otherwise, start a new one (First token)
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: data.token,
+                    intent: 'what_to_answer',
+                    isStreaming: true
+                }];
+            });
+        }));
+
         cleanups.push(window.electronAPI.onIntelligenceSuggestedAnswer((data) => {
             setIsProcessing(false);
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
-                role: 'system',
-                text: data.answer,  // Plain text, no markdown - ready to speak
-                intent: 'what_to_answer'
-            }]);
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+
+                // If we were streaming, finalize it
+                if (lastMsg && lastMsg.isStreaming && lastMsg.intent === 'what_to_answer') {
+                    // Start new array to avoid mutation
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: data.answer, // Ensure final consistency
+                        isStreaming: false
+                    };
+                    return updated;
+                }
+
+                // If we missed the stream (or not streaming), append fresh
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: data.answer,  // Plain text, no markdown - ready to speak
+                    intent: 'what_to_answer'
+                }];
+            });
+        }));
+
+        // STREAMING: Refinement
+        cleanups.push(window.electronAPI.onIntelligenceRefinedAnswerToken((data) => {
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.isStreaming && lastMsg.intent === data.intent) {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: lastMsg.text + data.token
+                    };
+                    return updated;
+                }
+                // New stream start (e.g. user clicked Shorten)
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: data.token,
+                    intent: data.intent,
+                    isStreaming: true
+                }];
+            });
         }));
 
         cleanups.push(window.electronAPI.onIntelligenceRefinedAnswer((data) => {
             setIsProcessing(false);
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.isStreaming && lastMsg.intent === data.intent) {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: data.answer,
+                        isStreaming: false
+                    };
+                    return updated;
+                }
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: data.answer,
+                    intent: data.intent
+                }];
+            });
+        }));
 
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
-                role: 'system',
-                text: data.answer,
-                intent: data.intent
-            }]);
+        // STREAMING: Recap
+        cleanups.push(window.electronAPI.onIntelligenceRecapToken((data) => {
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.isStreaming && lastMsg.intent === 'recap') {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: lastMsg.text + data.token
+                    };
+                    return updated;
+                }
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: data.token,
+                    intent: 'recap',
+                    isStreaming: true
+                }];
+            });
         }));
 
         cleanups.push(window.electronAPI.onIntelligenceRecap((data) => {
             setIsProcessing(false);
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
-                role: 'system',
-                text: data.summary,
-                intent: 'recap'
-            }]);
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.isStreaming && lastMsg.intent === 'recap') {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: data.summary,
+                        isStreaming: false
+                    };
+                    return updated;
+                }
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: data.summary,
+                    intent: 'recap'
+                }];
+            });
+        }));
+
+        // STREAMING: Follow-Up Questions (Rendered as message? Or specific UI?)
+        // Currently interface typically renders follow-up Qs as a message or button update.
+        // Let's assume message for now based on existing 'follow_up_questions_update' handling
+        // But wait, existing handle just sets state?
+        // Let's check how 'follow_up_questions_update' was handled.
+        // It was handled separate locally in this component maybe?
+        // Ah, I need to see the existing listener for 'onIntelligenceFollowUpQuestionsUpdate'
+
+        // Let's implemented token streaming for it anyway, likely it updates a message bubble 
+        // OR it might update a specialized "Suggested Questions" area.
+        // Assuming it's a message for consistency with "Copilot" approach.
+
+        cleanups.push(window.electronAPI.onIntelligenceFollowUpQuestionsToken((data) => {
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.isStreaming && lastMsg.intent === 'follow_up_questions') {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: lastMsg.text + data.token
+                    };
+                    return updated;
+                }
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: data.token,
+                    intent: 'follow_up_questions',
+                    isStreaming: true
+                }];
+            });
+        }));
+
+        cleanups.push(window.electronAPI.onIntelligenceFollowUpQuestionsUpdate((data) => {
+            // This event name is slightly different ('update' vs 'answer')
+            setIsProcessing(false);
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.isStreaming && lastMsg.intent === 'follow_up_questions') {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: data.questions,
+                        isStreaming: false
+                    };
+                    return updated;
+                }
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: data.questions,
+                    intent: 'follow_up_questions'
+                }];
+            });
         }));
 
         cleanups.push(window.electronAPI.onIntelligenceManualResult((data) => {
@@ -434,6 +604,77 @@ const NativelyInterface = () => {
         }
     };
 
+
+    // Setup Streaming Listeners
+    useEffect(() => {
+        const cleanups: (() => void)[] = [];
+
+        // Stream Token
+        cleanups.push(window.electronAPI.onGeminiStreamToken((token) => {
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                // Should we be updating the last message or finding the specific streaming one?
+                // Assuming the last added message is the one we are streaming into.
+                if (lastMsg && lastMsg.isStreaming && lastMsg.role === 'system') {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        text: lastMsg.text + token,
+                        // re-check code status on every token? Expensive but needed for progressive highlighting
+                        isCode: (lastMsg.text + token).includes('```') || (lastMsg.text + token).includes('def ') || (lastMsg.text + token).includes('function ')
+                    };
+                    return updated;
+                }
+                return prev;
+            });
+        }));
+
+        // Stream Done
+        cleanups.push(window.electronAPI.onGeminiStreamDone(() => {
+            setIsProcessing(false);
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.isStreaming) {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        isStreaming: false
+                    };
+                    return updated;
+                }
+                return prev;
+            });
+        }));
+
+        // Stream Error
+        cleanups.push(window.electronAPI.onGeminiStreamError((error) => {
+            setIsProcessing(false);
+            setMessages(prev => {
+                // Append error to the current message or add new one?
+                // Let's add a new error block if the previous one confusing,
+                // or just update status.
+                // Ideally we want to show the partial response AND the error.
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.isStreaming) {
+                    const updated = [...prev];
+                    updated[prev.length - 1] = {
+                        ...lastMsg,
+                        isStreaming: false,
+                        text: lastMsg.text + `\n\n[Error: ${error}]`
+                    };
+                    return updated;
+                }
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: `❌ Error: ${error}`
+                }];
+            });
+        }));
+
+        return () => cleanups.forEach(fn => fn());
+    }, []);
+
     // MODE 5: Manual Answer - Toggle recording for voice-to-answer
     const handleAnswerNow = async () => {
         if (isManualRecording) {
@@ -468,6 +709,14 @@ const NativelyInterface = () => {
                 screenshotPreview: currentAttachment?.preview
             }]);
 
+            // Add placeholder for streaming response
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(),
+                role: 'system',
+                text: '',
+                isStreaming: true
+            }]);
+
             setIsProcessing(true);
 
             try {
@@ -498,23 +747,28 @@ Instructions:
 Provide only the answer, nothing else.`;
                 }
 
-                const response = await window.electronAPI.invoke('gemini-chat', prompt, currentAttachment?.path);
-                const isCode = response.includes('```') || response.includes('def ') || response.includes('function ');
+                // Call Streaming API
+                await window.electronAPI.streamGeminiChat(prompt, currentAttachment?.path);
 
-                setMessages(prev => [...prev, {
-                    id: Date.now().toString(),
-                    role: 'system',
-                    text: response,
-                    isCode
-                }]);
             } catch (err) {
-                setMessages(prev => [...prev, {
-                    id: Date.now().toString(),
-                    role: 'system',
-                    text: `❌ Error: ${err}`
-                }]);
-            } finally {
+                // Initial invocation failing (e.g. IPC error before stream starts)
                 setIsProcessing(false);
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    // If we just added the empty streaming placeholder, remove it or fill it with error
+                    if (last && last.isStreaming && last.text === '') {
+                        return prev.slice(0, -1).concat({
+                            id: Date.now().toString(),
+                            role: 'system',
+                            text: `❌ Error starting stream: ${err}`
+                        });
+                    }
+                    return [...prev, {
+                        id: Date.now().toString(),
+                        role: 'system',
+                        text: `❌ Error: ${err}`
+                    }];
+                });
             }
         } else {
             // Start recording - reset voice input state
@@ -552,30 +806,42 @@ Provide only the answer, nothing else.`;
             screenshotPreview: currentAttachment?.preview
         }]);
 
+        // Add placeholder for streaming response
+        setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'system',
+            text: '',
+            isStreaming: true
+        }]);
+
         setIsExpanded(true);
         setIsProcessing(true);
 
         try {
             // Pass imagePath if attached, AND conversation context
-            const response = await window.electronAPI.invoke(
-                'gemini-chat',
+            await window.electronAPI.streamGeminiChat(
                 userText || 'Analyze this screenshot',
                 currentAttachment?.path,
                 conversationContext // Pass context so "answer this" works
             );
-
-            const isCode = response.includes('```') || response.includes('def ') || response.includes('function ');
-
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
-                role: 'system',
-                text: response,
-                isCode
-            }]);
         } catch (err) {
-            // Silent error
-        } finally {
             setIsProcessing(false);
+            setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last && last.isStreaming && last.text === '') {
+                    // remove the empty placeholder
+                    return prev.slice(0, -1).concat({
+                        id: Date.now().toString(),
+                        role: 'system',
+                        text: `❌ Error starting stream: ${err}`
+                    });
+                }
+                return [...prev, {
+                    id: Date.now().toString(),
+                    role: 'system',
+                    text: `❌ Error: ${err}`
+                }];
+            });
         }
     };
 
@@ -643,7 +909,8 @@ Provide only the answer, nothing else.`;
                             return (
                                 <div key={i} className="markdown-content">
                                     <ReactMarkdown
-                                        remarkPlugins={[remarkGfm]}
+                                        remarkPlugins={[remarkGfm, remarkMath]}
+                                        rehypePlugins={[rehypeKatex]}
                                         components={{
                                             p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
                                             strong: ({ node, ...props }: any) => <strong className="font-bold text-white" {...props} />,
@@ -678,7 +945,7 @@ Provide only the answer, nothing else.`;
                         <span>Shortened</span>
                     </div>
                     <div className="text-slate-200 text-[13px] leading-relaxed markdown-content">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={{
                             p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
                             strong: ({ node, ...props }: any) => <strong className="font-bold text-cyan-100" {...props} />,
                             ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2" {...props} />,
@@ -699,7 +966,7 @@ Provide only the answer, nothing else.`;
                         <span>Recap</span>
                     </div>
                     <div className="text-slate-200 text-[13px] leading-relaxed markdown-content">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={{
                             p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
                             strong: ({ node, ...props }: any) => <strong className="font-bold text-indigo-100" {...props} />,
                             ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2" {...props} />,
@@ -720,7 +987,7 @@ Provide only the answer, nothing else.`;
                         <span>Follow-Up Questions</span>
                     </div>
                     <div className="text-slate-200 text-[13px] leading-relaxed markdown-content">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                        <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={{
                             p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
                             strong: ({ node, ...props }: any) => <strong className="font-bold text-[#FFF9C4]" {...props} />,
                             ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2" {...props} />,
@@ -799,7 +1066,8 @@ Provide only the answer, nothing else.`;
                             return (
                                 <div key={i} className="markdown-content">
                                     <ReactMarkdown
-                                        remarkPlugins={[remarkGfm]}
+                                        remarkPlugins={[remarkGfm, remarkMath]}
+                                        rehypePlugins={[rehypeKatex]}
                                         components={{
                                             p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
                                             strong: ({ node, ...props }: any) => <strong className="font-bold text-emerald-100" {...props} />,
@@ -824,7 +1092,8 @@ Provide only the answer, nothing else.`;
         return (
             <div className="markdown-content">
                 <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
+                    remarkPlugins={[remarkGfm, remarkMath]}
+                    rehypePlugins={[rehypeKatex]}
                     components={{
                         p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />,
                         strong: ({ node, ...props }: any) => <strong className="font-bold opacity-100" {...props} />,

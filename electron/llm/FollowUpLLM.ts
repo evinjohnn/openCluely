@@ -65,4 +65,61 @@ export class FollowUpLLM {
             return "";
         }
     }
+
+    /**
+     * Refine a previous answer based on user request (Streamed)
+     */
+    async *generateStream(
+        previousAnswer: string,
+        refinementRequest: string,
+        context?: string
+    ): AsyncGenerator<string> {
+        try {
+            if (!previousAnswer.trim()) {
+                yield "";
+                return;
+            }
+
+            const contents = buildFollowUpContents(
+                previousAnswer,
+                refinementRequest,
+                context
+            );
+
+            console.log(`[FollowUpLLM] Starting stream with model: ${this.modelName}`);
+
+            const streamResult = await this.client.models.generateContentStream({
+                model: this.modelName,
+                contents: contents,
+                config: {
+                    maxOutputTokens: this.config.maxOutputTokens,
+                    temperature: this.config.temperature,
+                    topP: this.config.topP,
+                },
+            });
+
+            // @ts-ignore
+            const stream = streamResult.stream || streamResult;
+
+            for await (const chunk of stream) {
+                let text = "";
+                // Robust handling
+                if (typeof chunk.text === 'function') {
+                    text = chunk.text();
+                } else if (typeof chunk.text === 'string') {
+                    text = chunk.text;
+                } else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    text = chunk.candidates[0].content.parts[0].text;
+                }
+
+                if (text) {
+                    yield text;
+                }
+            }
+
+        } catch (error) {
+            console.error("[FollowUpLLM] Streaming generation failed:", error);
+            yield "";
+        }
+    }
 }

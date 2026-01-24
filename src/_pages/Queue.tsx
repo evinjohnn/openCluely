@@ -10,6 +10,11 @@ import {
 } from "../components/ui/toast"
 import QueueCommands from "../components/Queue/QueueCommands"
 import ModelSelector from "../components/ui/ModelSelector"
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 interface QueueProps {
   setView: React.Dispatch<React.SetStateAction<"queue" | "solutions" | "debug">>
@@ -86,18 +91,69 @@ const Queue: React.FC<QueueProps> = ({ setView }) => {
     }
   }
 
+  // Setup Streaming Listeners
+  useEffect(() => {
+    const cleanups: (() => void)[] = [];
+
+    // Stream Token
+    cleanups.push(window.electronAPI.onGeminiStreamToken((token) => {
+      setChatMessages(prev => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.role === 'gemini' && lastMsg.text.endsWith("...")) {
+          // Trying to identify the streaming message. 
+          // Since we don't have an ID, we assume the last 'gemini' message that is "..." (placeholder) or active is the one.
+          // Actually, simpler: when starting stream, we add a message.
+          // But wait, we don't have `isStreaming` flag in `Queue` state.
+          // We should add it or just append to the last message if it's from gemini.
+
+          // If the last message is from gemini, append to it.
+          // If the last message is user, we haven't created the gemini message yet?
+          // In handleChatSend we create it.
+
+          const updated = [...prev];
+          updated[prev.length - 1] = {
+            ...lastMsg,
+            text: (lastMsg.text === "..." ? "" : lastMsg.text) + token
+          };
+          return updated;
+        }
+        // If last was user, this is the first token, so we might need to add a message?
+        // Better to add a placeholder in handleChatSend.
+        return prev;
+      });
+    }));
+
+    // Stream Done
+    cleanups.push(window.electronAPI.onGeminiStreamDone(() => {
+      setChatLoading(false);
+    }));
+
+    // Stream Error
+    cleanups.push(window.electronAPI.onGeminiStreamError((error) => {
+      setChatLoading(false);
+      setChatMessages((msgs) => [...msgs, { role: "gemini", text: "Error: " + String(error) }]);
+    }));
+
+    return () => cleanups.forEach(fn => fn());
+  }, []);
+
   const handleChatSend = async () => {
     if (!chatInput.trim()) return
     setChatMessages((msgs) => [...msgs, { role: "user", text: chatInput }])
+
+    // Add placeholder
+    setChatMessages((msgs) => [...msgs, { role: "gemini", text: "..." }])
+
     setChatLoading(true)
+    const message = chatInput; // Capture value
     setChatInput("")
+
     try {
-      const response = await window.electronAPI.invoke("gemini-chat", chatInput)
-      setChatMessages((msgs) => [...msgs, { role: "gemini", text: response }])
+      await window.electronAPI.streamGeminiChat(message)
     } catch (err) {
+      setChatLoading(false)
       setChatMessages((msgs) => [...msgs, { role: "gemini", text: "Error: " + String(err) }])
     } finally {
-      setChatLoading(false)
       chatInputRef.current?.focus()
     }
   }
@@ -176,12 +232,14 @@ const Queue: React.FC<QueueProps> = ({ setView }) => {
         const latest = data?.path || (Array.isArray(data) && data.length > 0 && data[data.length - 1]?.path);
         if (latest) {
           // Call the LLM to process the screenshot
-          const response = await window.electronAPI.invoke("analyze-image-file", latest);
-          setChatMessages((msgs) => [...msgs, { role: "gemini", text: response.text }]);
+          // Use streaming for this too!
+          setChatMessages((msgs) => [...msgs, { role: "user", text: "📷 Analyzing screenshot..." }]);
+          setChatMessages((msgs) => [...msgs, { role: "gemini", text: "..." }]);
+
+          await window.electronAPI.streamGeminiChat("Describe this image and solve any problem in it.", latest);
         }
       } catch (err) {
         setChatMessages((msgs) => [...msgs, { role: "gemini", text: "Error: " + String(err) }]);
-      } finally {
         setChatLoading(false);
       }
     });
@@ -270,12 +328,22 @@ const Queue: React.FC<QueueProps> = ({ setView }) => {
                     >
                       <div
                         className={`max-w-[80%] px-3 py-1.5 rounded-xl text-xs shadow-md backdrop-blur-sm border ${msg.role === "user"
-                            ? "bg-gray-700/80 text-gray-100 ml-12 border-gray-600/40"
-                            : "bg-white/85 text-gray-700 mr-12 border-gray-200/50"
+                          ? "bg-gray-700/80 text-gray-100 ml-12 border-gray-600/40"
+                          : "bg-white/85 text-gray-700 mr-12 border-gray-200/50"
                           }`}
                         style={{ wordBreak: "break-word", lineHeight: "1.4" }}
                       >
-                        {msg.text}
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkMath]}
+                          rehypePlugins={[rehypeKatex]}
+                          components={{
+                            p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />,
+                            a: ({ node, ...props }: any) => <a className="underline hover:opacity-80" target="_blank" rel="noopener noreferrer" {...props} />,
+                            code: ({ node, ...props }: any) => <code className="bg-black/20 rounded px-1 py-0.5 text-xs font-mono" {...props} />,
+                          }}
+                        >
+                          {msg.text}
+                        </ReactMarkdown>
                       </div>
                     </div>
                   ))

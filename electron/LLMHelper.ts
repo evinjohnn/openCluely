@@ -568,6 +568,143 @@ ANSWER DIRECTLY:`;
     return this.chatWithGemini(message);
   }
 
+  /**
+   * Stream chat response from Gemini
+   * Yields chunks of text as they arrive
+   */
+  public async *streamChatWithGemini(message: string, imagePath?: string, context?: string): AsyncGenerator<string, void, unknown> {
+    console.log(`[LLMHelper] streamChatWithGemini called with message:`, message.substring(0, 50));
+
+    // Build context-aware prompt
+    let fullMessage = `${HARD_SYSTEM_PROMPT}\n\n${message}`;
+    if (context) {
+      fullMessage = `${HARD_SYSTEM_PROMPT}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`;
+    }
+
+    if (this.useOllama) {
+      // Basic Ollama streaming (simulated for consistency if needed, or implement real streaming)
+      // For now, we'll fall back to non-streaming for Ollama to match current capability
+      // or implement simulated streaming if the user insists.
+      // Given requirements, let's just await the full response and yield it as one chunk for Ollama
+      // UNLESS we want to implement fetch with stream: true for Ollama.
+      // Let's keep it simple: fallback to full response for Ollama for this pass.
+      const response = await this.callOllama(fullMessage);
+      yield response;
+      return;
+    }
+
+    if (!this.client) throw new Error("No LLM provider configured");
+
+    const buildContents = async () => {
+      if (imagePath) {
+        const imageData = await fs.promises.readFile(imagePath);
+        return [
+          { text: fullMessage },
+          {
+            inlineData: {
+              mimeType: "image/png",
+              data: imageData.toString("base64")
+            }
+          }
+        ];
+      }
+      return [{ text: fullMessage }];
+    };
+
+    const contents = await buildContents();
+
+    try {
+      console.log(`[LLMHelper] [STREAM-V2] Starting stream with model: ${this.geminiModel}`);
+
+      // Strategy: Race the stream initialization against a timeout
+      // If Flash takes > 4000ms to start, we failover to Pro
+      const startStream = async (model: string) => {
+        return await this.client!.models.generateContentStream({
+          model: model,
+          contents: contents,
+          config: {
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            temperature: 0.4,
+          }
+        });
+      };
+
+      let streamResult;
+
+      try {
+        // Attempt 1: FAST (Flash) with Timeout
+        // Dynamic Timeout: 7s for text, 15s for multimodal (images need more processing time)
+        const timeoutMs = imagePath ? 15000 : 7000;
+
+        console.log(`[LLMHelper] Attempting Flash stream (${this.geminiModel}) with ${timeoutMs}ms timeout...`);
+        streamResult = await Promise.race([
+          startStream(this.geminiModel),
+          new Promise<'TIMEOUT'>((_, reject) =>
+            setTimeout(() => reject(new Error("TIMEOUT")), timeoutMs)
+          )
+        ]);
+      } catch (err: any) {
+        // If Timeout or Error, try Backup (Pro)
+        console.warn(`[LLMHelper] Flash Stream FAILED. Reason: ${err.message}`);
+        if (err.message !== "TIMEOUT") {
+          console.error(`[LLMHelper] Full Flash Error Code:`, err);
+        }
+
+        console.warn(`[LLMHelper] Switching to Backup (gemini-3-pro-preview)...`);
+        const GEMINI_PRO_MODEL = "gemini-3-pro-preview";
+        try {
+          streamResult = await startStream(GEMINI_PRO_MODEL);
+          console.log(`[LLMHelper] Backup stream (Pro) started successfully.`);
+        } catch (backupErr: any) {
+          // If Pro also fails, throw original or new error
+          console.error(`[LLMHelper] Backup stream also failed:`, backupErr);
+          throw err; // Throw original error (timeout/flash error) as it's more relevant to "why" it failed first
+        }
+      }
+
+      // @ts-ignore - SDK typing might be slightly off or version dependent, handle both cases
+      const stream = streamResult.stream || streamResult;
+
+      for await (const chunk of stream) {
+        let chunkText = "";
+
+        try {
+          // console.log("[STREAM-DEBUG] Chunk keys:", Object.keys(chunk));
+
+          if (typeof chunk.text === 'function') {
+            chunkText = chunk.text();
+          } else if (typeof chunk.text === 'string') {
+            chunkText = chunk.text;
+          } else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) {
+            chunkText = chunk.candidates[0].content.parts[0].text;
+          }
+        } catch (err) {
+          console.error("[STREAM-DEBUG] Error extracting text from chunk:", err);
+          console.error("[STREAM-DEBUG] Chunk structure:", JSON.stringify(chunk).substring(0, 200));
+        }
+
+        if (chunkText) {
+          // Check for fallback phrases in the accumulated chunk (simple check)
+          // Real-time filtering is hard, so we do best-effort here.
+          // If we wanted to be strict, we'd buffer, but that adds latency.
+          // We'll yield raw tokens.
+          yield chunkText;
+        }
+      }
+
+    } catch (error: any) {
+      console.error("[LLMHelper] Streaming error:", error);
+
+      // Simple retry logic for 503s on START (not during stream)
+      if (error.message.includes("503") || error.message.includes("overloaded")) {
+        yield "The AI service is currently overloaded. Please try again in a moment.";
+        return;
+      }
+
+      throw error;
+    }
+  }
+
   public isUsingOllama(): boolean {
     return this.useOllama;
   }

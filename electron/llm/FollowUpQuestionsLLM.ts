@@ -83,4 +83,57 @@ export class FollowUpQuestionsLLM {
             return "";
         }
     }
+
+    /**
+     * Generate strategic follow-up questions (Streamed)
+     */
+    async *generateStream(context: string): AsyncGenerator<string> {
+        try {
+            if (!context.trim()) {
+                yield "";
+                return;
+            }
+
+            const contents = buildContents(
+                FOLLOW_UP_QUESTIONS_MODE_PROMPT,
+                "Suggest MAX 4 brief follow-up questions based on this context.",
+                context
+            );
+
+            console.log(`[FollowUpQuestionsLLM] Starting stream with model: ${this.modelName}`);
+
+            const streamResult = await this.client.models.generateContentStream({
+                model: this.modelName,
+                contents: contents,
+                config: {
+                    maxOutputTokens: this.config.maxOutputTokens,
+                    temperature: this.config.temperature,
+                    topP: this.config.topP,
+                },
+            });
+
+            // @ts-ignore
+            const stream = streamResult.stream || streamResult;
+
+            for await (const chunk of stream) {
+                let text = "";
+                // Robust handling
+                if (typeof chunk.text === 'function') {
+                    text = chunk.text();
+                } else if (typeof chunk.text === 'string') {
+                    text = chunk.text;
+                } else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    text = chunk.candidates[0].content.parts[0].text;
+                }
+
+                if (text) {
+                    yield text;
+                }
+            }
+
+        } catch (error) {
+            console.error("[FollowUpQuestionsLLM] Streaming generation failed:", error);
+            yield "";
+        }
+    }
 }

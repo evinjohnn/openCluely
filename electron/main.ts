@@ -129,6 +129,20 @@ export class AppState {
       this.nativeAudioClient.sendAssistantSuggestion(answer)
     })
 
+    this.intelligenceManager.on('suggested_answer_token', (token: string, question: string, confidence: number) => {
+      const win = mainWindow()
+      if (win) {
+        win.webContents.send('intelligence-suggested-answer-token', { token, question, confidence })
+      }
+    })
+
+    this.intelligenceManager.on('refined_answer_token', (token: string, intent: string) => {
+      const win = mainWindow()
+      if (win) {
+        win.webContents.send('intelligence-refined-answer-token', { token, intent })
+      }
+    })
+
     this.intelligenceManager.on('refined_answer', (answer: string, intent: string) => {
       const win = mainWindow()
       if (win) {
@@ -145,10 +159,24 @@ export class AppState {
       }
     })
 
+    this.intelligenceManager.on('recap_token', (token: string) => {
+      const win = mainWindow()
+      if (win) {
+        win.webContents.send('intelligence-recap-token', { token })
+      }
+    })
+
     this.intelligenceManager.on('follow_up_questions_update', (questions: string) => {
       const win = mainWindow()
       if (win) {
         win.webContents.send('intelligence-follow-up-questions-update', { questions })
+      }
+    })
+
+    this.intelligenceManager.on('follow_up_questions_token', (token: string) => {
+      const win = mainWindow()
+      if (win) {
+        win.webContents.send('intelligence-follow-up-questions-token', { token })
       }
     })
 

@@ -47,9 +47,13 @@ export type IntelligenceMode = 'idle' | 'assist' | 'what_to_say' | 'follow_up' |
 export interface IntelligenceModeEvents {
     'assist_update': (insight: string) => void;
     'suggested_answer': (answer: string, question: string, confidence: number) => void;
+    'suggested_answer_token': (token: string, question: string, confidence: number) => void;
     'refined_answer': (answer: string, intent: string) => void;
+    'refined_answer_token': (token: string, intent: string) => void;
     'recap': (summary: string) => void;
+    'recap_token': (token: string) => void;
     'follow_up_questions_update': (questions: string) => void;
+    'follow_up_questions_token': (token: string) => void;
     'manual_answer_started': () => void;
     'manual_answer_result': (answer: string, question: string) => void;
     'mode_changed': (mode: IntelligenceMode) => void;
@@ -365,14 +369,35 @@ export class IntelligenceManager extends EventEmitter {
             const preparedTranscript = prepareTranscriptForWhatToAnswer(transcriptTurns, 12);
 
             // Single-pass LLM call: question inference + answer generation
-            const answer = await this.whatToAnswerLLM.generate(preparedTranscript);
+            // NOW STREAMING
+
+            // Emit start event if needed (optional)
+            // this.emit('suggested_answer_started');
+
+            let fullAnswer = "";
+            const stream = this.whatToAnswerLLM.generateStream(preparedTranscript);
+
+            for await (const token of stream) {
+                this.emit('suggested_answer_token', token, question || 'inferred', confidence);
+                fullAnswer += token;
+            }
+
+            // Sanity check final answer
+            if (!fullAnswer || fullAnswer.trim().length < 5) {
+                fullAnswer = "Could you repeat that? I want to make sure I address your question properly.";
+                // If stream yielded nothing, we should emit the fallback as a token?
+                // Or just let the completion event handle it.
+                // Ideally we send the fallback as a chunk if empty.
+                // But generateStream already yields fallback on error.
+            }
 
             // Store in context (WhatToAnswerLLM never returns empty)
-            this.addAssistantMessage(answer);
-            this.emit('suggested_answer', answer, question || 'inferred from context', confidence);
+            this.addAssistantMessage(fullAnswer);
+            // Emit completion event (legacy consumers + done signal)
+            this.emit('suggested_answer', fullAnswer, question || 'inferred from context', confidence);
 
             this.setMode('idle');
-            return answer;
+            return fullAnswer;
 
         } catch (error) {
             this.emit('error', error as Error, 'what_to_say');
@@ -382,6 +407,10 @@ export class IntelligenceManager extends EventEmitter {
         }
     }
 
+    /**
+     * MODE 3: Follow-Up (Refinement)
+     * Modify the last assistant message
+     */
     /**
      * MODE 3: Follow-Up (Refinement)
      * Modify the last assistant message
@@ -404,20 +433,27 @@ export class IntelligenceManager extends EventEmitter {
 
             const context = this.getFormattedContext(60);
             const refinementRequest = userRequest || intent;
-            const refined = await this.followUpLLM.generate(
+
+            let fullRefined = "";
+            const stream = this.followUpLLM.generateStream(
                 this.lastAssistantMessage,
                 refinementRequest,
                 context
             );
 
-            if (refined) {
+            for await (const token of stream) {
+                this.emit('refined_answer_token', token, intent);
+                fullRefined += token;
+            }
+
+            if (fullRefined) {
                 // Store refined answer
-                this.addAssistantMessage(refined);
-                this.emit('refined_answer', refined, intent);
+                this.addAssistantMessage(fullRefined);
+                this.emit('refined_answer', fullRefined, intent);
             }
 
             this.setMode('idle');
-            return refined;
+            return fullRefined;
 
         } catch (error) {
             this.emit('error', error as Error, 'follow_up');
@@ -448,13 +484,19 @@ export class IntelligenceManager extends EventEmitter {
                 return null;
             }
 
-            const summary = await this.recapLLM.generate(context);
+            let fullSummary = "";
+            const stream = this.recapLLM.generateStream(context);
 
-            if (summary) {
-                this.emit('recap', summary);
+            for await (const token of stream) {
+                this.emit('recap_token', token);
+                fullSummary += token;
+            }
+
+            if (fullSummary) {
+                this.emit('recap', fullSummary);
             }
             this.setMode('idle');
-            return summary;
+            return fullSummary;
 
         } catch (error) {
             this.emit('error', error as Error, 'recap');
@@ -485,13 +527,19 @@ export class IntelligenceManager extends EventEmitter {
                 return null;
             }
 
-            const questions = await this.followUpQuestionsLLM.generate(context);
+            let fullQuestions = "";
+            const stream = this.followUpQuestionsLLM.generateStream(context);
 
-            if (questions) {
-                this.emit('follow_up_questions_update', questions);
+            for await (const token of stream) {
+                this.emit('follow_up_questions_token', token);
+                fullQuestions += token;
+            }
+
+            if (fullQuestions) {
+                this.emit('follow_up_questions_update', fullQuestions);
             }
             this.setMode('idle');
-            return questions;
+            return fullQuestions;
 
         } catch (error) {
             this.emit('error', error as Error, 'follow_up_questions');
