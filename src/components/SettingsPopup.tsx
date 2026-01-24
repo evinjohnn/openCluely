@@ -43,7 +43,7 @@ const SettingsPopup = () => {
 
     return (
         <div className="w-full h-full bg-transparent p-2 flex flex-col">
-            <div className="w-full h-full bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-hidden shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
+            <div className="w-full h-full bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-x-hidden overflow-y-auto shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
 
                 {/* Undetectability */}
                 <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-default">

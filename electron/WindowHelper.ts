@@ -44,9 +44,9 @@ export class WindowHelper {
     const primaryDisplay = screen.getPrimaryDisplay()
     const workArea = primaryDisplay.workAreaSize
 
-    // Use 75% width if debugging has occurred, otherwise use 60%
+    // Use 75% width if debugging has occurred, otherwise use 70%
     const maxAllowedWidth = Math.floor(
-      workArea.width * (this.appState.getHasDebugged() ? 0.75 : 0.5)
+      workArea.width * (this.appState.getHasDebugged() ? 0.75 : 0.7)
     )
 
     // Ensure width doesn't exceed max allowed width and height is reasonable
@@ -81,7 +81,7 @@ export class WindowHelper {
 
 
     const windowSettings: Electron.BrowserWindowConstructorOptions = {
-      width: 640,
+      width: 990,
       height: 600,
       minWidth: 300,
       minHeight: 200,

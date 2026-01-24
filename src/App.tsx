@@ -12,7 +12,7 @@ const App: React.FC = () => {
   const isAdvancedWindow = new URLSearchParams(window.location.search).get('window') === 'advanced';
 
   return (
-    <div className="min-h-0 w-full">
+    <div className="h-full min-h-0 w-full">
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
           {isSettingsWindow ? <SettingsPopup /> :
