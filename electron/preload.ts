@@ -1,0 +1,386 @@
+import { contextBridge, ipcRenderer } from "electron"
+
+// Types for the exposed Electron API
+interface ElectronAPI {
+  updateContentDimensions: (dimensions: {
+    width: number
+    height: number
+  }) => Promise<void>
+  getScreenshots: () => Promise<Array<{ path: string; preview: string }>>
+  deleteScreenshot: (
+    path: string
+  ) => Promise<{ success: boolean; error?: string }>
+  onScreenshotTaken: (
+    callback: (data: { path: string; preview: string }) => void
+  ) => () => void
+  onScreenshotAttached: (
+    callback: (data: { path: string; preview: string }) => void
+  ) => () => void
+  onSolutionsReady: (callback: (solutions: string) => void) => () => void
+  onResetView: (callback: () => void) => () => void
+  onSolutionStart: (callback: () => void) => () => void
+  onDebugStart: (callback: () => void) => () => void
+  onDebugSuccess: (callback: (data: any) => void) => () => void
+  onSolutionError: (callback: (error: string) => void) => () => void
+  onProcessingNoScreenshots: (callback: () => void) => () => void
+  onProblemExtracted: (callback: (data: any) => void) => () => void
+  onSolutionSuccess: (callback: (data: any) => void) => () => void
+
+  onUnauthorized: (callback: () => void) => () => void
+  onDebugError: (callback: (error: string) => void) => () => void
+  takeScreenshot: () => Promise<void>
+  moveWindowLeft: () => Promise<void>
+  moveWindowRight: () => Promise<void>
+  moveWindowUp: () => Promise<void>
+  moveWindowDown: () => Promise<void>
+
+  analyzeImageFile: (path: string) => Promise<void>
+  quitApp: () => Promise<void>
+
+  // LLM Model Management
+  getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
+  getAvailableOllamaModels: () => Promise<string[]>
+  switchToOllama: (model?: string, url?: string) => Promise<{ success: boolean; error?: string }>
+  switchToGemini: (apiKey?: string, modelId?: string) => Promise<{ success: boolean; error?: string }>
+  testLlmConnection: () => Promise<{ success: boolean; error?: string }>
+
+  // Native Audio Service Events
+  onNativeAudioTranscript: (callback: (transcript: { speaker: string; text: string; final: boolean }) => void) => () => void
+  onNativeAudioSuggestion: (callback: (suggestion: { context: string; lastQuestion: string; confidence: number }) => void) => () => void
+  onNativeAudioConnected: (callback: () => void) => () => void
+  onNativeAudioDisconnected: (callback: () => void) => () => void
+  onSuggestionGenerated: (callback: (data: { question: string; suggestion: string; confidence: number }) => void) => () => void
+  onSuggestionProcessingStart: (callback: () => void) => () => void
+  onSuggestionError: (callback: (error: { error: string }) => void) => () => void
+  generateSuggestion: (context: string, lastQuestion: string) => Promise<{ suggestion: string }>
+  getNativeAudioStatus: () => Promise<{ connected: boolean }>
+
+  // Intelligence Mode IPC
+  generateAssist: () => Promise<{ insight: string | null }>
+  generateWhatToSay: (question?: string) => Promise<{ answer: string | null; question?: string; error?: string }>
+  generateFollowUp: (intent: string, userRequest?: string) => Promise<{ refined: string | null; intent: string }>
+  generateRecap: () => Promise<{ summary: string | null }>
+  submitManualQuestion: (question: string) => Promise<{ answer: string | null; question: string }>
+  getIntelligenceContext: () => Promise<{ context: string; lastAssistantMessage: string | null; activeMode: string }>
+  resetIntelligence: () => Promise<{ success: boolean; error?: string }>
+
+  // Intelligence Mode Events
+  onIntelligenceAssistUpdate: (callback: (data: { insight: string }) => void) => () => void
+  onIntelligenceSuggestedAnswer: (callback: (data: { answer: string; question: string; confidence: number }) => void) => () => void
+  onIntelligenceRefinedAnswer: (callback: (data: { answer: string; intent: string }) => void) => () => void
+  onIntelligenceRecap: (callback: (data: { summary: string }) => void) => () => void
+  onIntelligenceManualStarted: (callback: () => void) => () => void
+  onIntelligenceManualResult: (callback: (data: { answer: string; question: string }) => void) => () => void
+  onIntelligenceModeChanged: (callback: (data: { mode: string }) => void) => () => void
+  onIntelligenceError: (callback: (data: { error: string; mode: string }) => void) => () => void
+
+  invoke: (channel: string, ...args: any[]) => Promise<any>
+  showWindow: () => Promise<void>
+  hideWindow: () => Promise<void>
+  onToggleExpand: (callback: () => void) => () => void
+}
+
+export const PROCESSING_EVENTS = {
+  //global states
+  UNAUTHORIZED: "procesing-unauthorized",
+  NO_SCREENSHOTS: "processing-no-screenshots",
+
+  //states for generating the initial solution
+  INITIAL_START: "initial-start",
+  PROBLEM_EXTRACTED: "problem-extracted",
+  SOLUTION_SUCCESS: "solution-success",
+  INITIAL_SOLUTION_ERROR: "solution-error",
+
+  //states for processing the debugging
+  DEBUG_START: "debug-start",
+  DEBUG_SUCCESS: "debug-success",
+  DEBUG_ERROR: "debug-error"
+} as const
+
+// Expose the Electron API to the renderer process
+contextBridge.exposeInMainWorld("electronAPI", {
+  updateContentDimensions: (dimensions: { width: number; height: number }) =>
+    ipcRenderer.invoke("update-content-dimensions", dimensions),
+  takeScreenshot: () => ipcRenderer.invoke("take-screenshot"),
+  getScreenshots: () => ipcRenderer.invoke("get-screenshots"),
+  deleteScreenshot: (path: string) =>
+    ipcRenderer.invoke("delete-screenshot", path),
+
+  // Event listeners
+  onScreenshotTaken: (
+    callback: (data: { path: string; preview: string }) => void
+  ) => {
+    const subscription = (_: any, data: { path: string; preview: string }) =>
+      callback(data)
+    ipcRenderer.on("screenshot-taken", subscription)
+    return () => {
+      ipcRenderer.removeListener("screenshot-taken", subscription)
+    }
+  },
+  onScreenshotAttached: (
+    callback: (data: { path: string; preview: string }) => void
+  ) => {
+    const subscription = (_: any, data: { path: string; preview: string }) =>
+      callback(data)
+    ipcRenderer.on("screenshot-attached", subscription)
+    return () => {
+      ipcRenderer.removeListener("screenshot-attached", subscription)
+    }
+  },
+  onSolutionsReady: (callback: (solutions: string) => void) => {
+    const subscription = (_: any, solutions: string) => callback(solutions)
+    ipcRenderer.on("solutions-ready", subscription)
+    return () => {
+      ipcRenderer.removeListener("solutions-ready", subscription)
+    }
+  },
+  onResetView: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("reset-view", subscription)
+    return () => {
+      ipcRenderer.removeListener("reset-view", subscription)
+    }
+  },
+  onSolutionStart: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on(PROCESSING_EVENTS.INITIAL_START, subscription)
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.INITIAL_START, subscription)
+    }
+  },
+  onDebugStart: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on(PROCESSING_EVENTS.DEBUG_START, subscription)
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.DEBUG_START, subscription)
+    }
+  },
+
+  onDebugSuccess: (callback: (data: any) => void) => {
+    ipcRenderer.on("debug-success", (_event, data) => callback(data))
+    return () => {
+      ipcRenderer.removeListener("debug-success", (_event, data) =>
+        callback(data)
+      )
+    }
+  },
+  onDebugError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error)
+    ipcRenderer.on(PROCESSING_EVENTS.DEBUG_ERROR, subscription)
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.DEBUG_ERROR, subscription)
+    }
+  },
+  onSolutionError: (callback: (error: string) => void) => {
+    const subscription = (_: any, error: string) => callback(error)
+    ipcRenderer.on(PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR, subscription)
+    return () => {
+      ipcRenderer.removeListener(
+        PROCESSING_EVENTS.INITIAL_SOLUTION_ERROR,
+        subscription
+      )
+    }
+  },
+  onProcessingNoScreenshots: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on(PROCESSING_EVENTS.NO_SCREENSHOTS, subscription)
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.NO_SCREENSHOTS, subscription)
+    }
+  },
+
+  onProblemExtracted: (callback: (data: any) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on(PROCESSING_EVENTS.PROBLEM_EXTRACTED, subscription)
+    return () => {
+      ipcRenderer.removeListener(
+        PROCESSING_EVENTS.PROBLEM_EXTRACTED,
+        subscription
+      )
+    }
+  },
+  onSolutionSuccess: (callback: (data: any) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on(PROCESSING_EVENTS.SOLUTION_SUCCESS, subscription)
+    return () => {
+      ipcRenderer.removeListener(
+        PROCESSING_EVENTS.SOLUTION_SUCCESS,
+        subscription
+      )
+    }
+  },
+  onUnauthorized: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on(PROCESSING_EVENTS.UNAUTHORIZED, subscription)
+    return () => {
+      ipcRenderer.removeListener(PROCESSING_EVENTS.UNAUTHORIZED, subscription)
+    }
+  },
+  moveWindowLeft: () => ipcRenderer.invoke("move-window-left"),
+  moveWindowRight: () => ipcRenderer.invoke("move-window-right"),
+  moveWindowUp: () => ipcRenderer.invoke("move-window-up"),
+  moveWindowDown: () => ipcRenderer.invoke("move-window-down"),
+
+  analyzeImageFile: (path: string) => ipcRenderer.invoke("analyze-image-file", path),
+  quitApp: () => ipcRenderer.invoke("quit-app"),
+  toggleWindow: () => ipcRenderer.invoke("toggle-window"),
+  showWindow: () => ipcRenderer.invoke("show-window"),
+  hideWindow: () => ipcRenderer.invoke("hide-window"),
+  setUndetectable: (state: boolean) => ipcRenderer.invoke("set-undetectable", state),
+
+  onSettingsVisibilityChange: (callback: (isVisible: boolean) => void) => {
+    const subscription = (_: any, isVisible: boolean) => callback(isVisible)
+    ipcRenderer.on("settings-visibility-changed", subscription)
+    return () => {
+      ipcRenderer.removeListener("settings-visibility-changed", subscription)
+    }
+  },
+
+  onToggleExpand: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("toggle-expand", subscription)
+    return () => {
+      ipcRenderer.removeListener("toggle-expand", subscription)
+    }
+  },
+
+  // LLM Model Management
+  getCurrentLlmConfig: () => ipcRenderer.invoke("get-current-llm-config"),
+  getAvailableOllamaModels: () => ipcRenderer.invoke("get-available-ollama-models"),
+  switchToOllama: (model?: string, url?: string) => ipcRenderer.invoke("switch-to-ollama", model, url),
+  switchToGemini: (apiKey?: string, modelId?: string) => ipcRenderer.invoke("switch-to-gemini", apiKey, modelId),
+  testLlmConnection: () => ipcRenderer.invoke("test-llm-connection"),
+
+  // Native Audio Service Events
+  onNativeAudioTranscript: (callback: (transcript: { speaker: string; text: string; final: boolean }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("native-audio-transcript", subscription)
+    return () => {
+      ipcRenderer.removeListener("native-audio-transcript", subscription)
+    }
+  },
+  onNativeAudioSuggestion: (callback: (suggestion: { context: string; lastQuestion: string; confidence: number }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("native-audio-suggestion", subscription)
+    return () => {
+      ipcRenderer.removeListener("native-audio-suggestion", subscription)
+    }
+  },
+  onNativeAudioConnected: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("native-audio-connected", subscription)
+    return () => {
+      ipcRenderer.removeListener("native-audio-connected", subscription)
+    }
+  },
+  onNativeAudioDisconnected: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("native-audio-disconnected", subscription)
+    return () => {
+      ipcRenderer.removeListener("native-audio-disconnected", subscription)
+    }
+  },
+  onSuggestionGenerated: (callback: (data: { question: string; suggestion: string; confidence: number }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("suggestion-generated", subscription)
+    return () => {
+      ipcRenderer.removeListener("suggestion-generated", subscription)
+    }
+  },
+  onSuggestionProcessingStart: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("suggestion-processing-start", subscription)
+    return () => {
+      ipcRenderer.removeListener("suggestion-processing-start", subscription)
+    }
+  },
+  onSuggestionError: (callback: (error: { error: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("suggestion-error", subscription)
+    return () => {
+      ipcRenderer.removeListener("suggestion-error", subscription)
+    }
+  },
+  generateSuggestion: (context: string, lastQuestion: string) =>
+    ipcRenderer.invoke("generate-suggestion", context, lastQuestion),
+
+  getNativeAudioStatus: () => ipcRenderer.invoke("native-audio-status"),
+
+  // Intelligence Mode IPC
+  generateAssist: () => ipcRenderer.invoke("generate-assist"),
+  generateWhatToSay: (question?: string) => ipcRenderer.invoke("generate-what-to-say", question),
+  generateFollowUp: (intent: string, userRequest?: string) => ipcRenderer.invoke("generate-follow-up", intent, userRequest),
+  generateFollowUpQuestions: () => ipcRenderer.invoke("generate-follow-up-questions"),
+  generateRecap: () => ipcRenderer.invoke("generate-recap"),
+  submitManualQuestion: (question: string) => ipcRenderer.invoke("submit-manual-question", question),
+  getIntelligenceContext: () => ipcRenderer.invoke("get-intelligence-context"),
+  resetIntelligence: () => ipcRenderer.invoke("reset-intelligence"),
+
+  // Intelligence Mode Events
+  onIntelligenceAssistUpdate: (callback: (data: { insight: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-assist-update", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-assist-update", subscription)
+    }
+  },
+  onIntelligenceSuggestedAnswer: (callback: (data: { answer: string; question: string; confidence: number }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-suggested-answer", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-suggested-answer", subscription)
+    }
+  },
+  onIntelligenceRefinedAnswer: (callback: (data: { answer: string; intent: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-refined-answer", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-refined-answer", subscription)
+    }
+  },
+  onIntelligenceRecap: (callback: (data: { summary: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-recap", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-recap", subscription)
+    }
+  },
+  onIntelligenceFollowUpQuestionsUpdate: (callback: (data: { questions: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-follow-up-questions-update", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-follow-up-questions-update", subscription)
+    }
+  },
+  onIntelligenceManualStarted: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("intelligence-manual-started", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-manual-started", subscription)
+    }
+  },
+  onIntelligenceManualResult: (callback: (data: { answer: string; question: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-manual-result", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-manual-result", subscription)
+    }
+  },
+  onIntelligenceModeChanged: (callback: (data: { mode: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-mode-changed", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-mode-changed", subscription)
+    }
+  },
+  onIntelligenceError: (callback: (data: { error: string; mode: string }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on("intelligence-error", subscription)
+    return () => {
+      ipcRenderer.removeListener("intelligence-error", subscription)
+    }
+  },
+
+  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args)
+} as ElectronAPI)
+
