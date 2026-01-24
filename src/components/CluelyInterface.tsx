@@ -29,6 +29,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ModelSelector from './ui/ModelSelector';
 import TopPill from './ui/TopPill';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
     id: string;
@@ -583,8 +585,11 @@ Provide only the answer, nothing else.`;
 
 
 
+
     const renderMessageText = (msg: Message) => {
         // Code-containing messages get special styling
+        // We split by code blocks to keep the "Code Solution" UI intact for the code parts
+        // But use ReactMarkdown for the text parts around it
         if (msg.isCode || (msg.role === 'system' && msg.text.includes('```'))) {
             const parts = msg.text.split(/(```[\s\S]*?```)/g);
             return (
@@ -634,14 +639,37 @@ Provide only the answer, nothing else.`;
                                     );
                                 }
                             }
-                            return <div key={i} className="whitespace-pre-wrap">{part}</div>;
+                            // Regular text - Render with Markdown
+                            return (
+                                <div key={i} className="markdown-content">
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        components={{
+                                            p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
+                                            strong: ({ node, ...props }: any) => <strong className="font-bold text-white" {...props} />,
+                                            em: ({ node, ...props }: any) => <em className="italic text-slate-300" {...props} />,
+                                            ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2 space-y-1" {...props} />,
+                                            ol: ({ node, ...props }: any) => <ol className="list-decimal ml-4 mb-2 space-y-1" {...props} />,
+                                            li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
+                                            h1: ({ node, ...props }: any) => <h1 className="text-lg font-bold text-white mb-2 mt-3" {...props} />,
+                                            h2: ({ node, ...props }: any) => <h2 className="text-base font-bold text-white mb-2 mt-3" {...props} />,
+                                            h3: ({ node, ...props }: any) => <h3 className="text-sm font-bold text-white mb-1 mt-2" {...props} />,
+                                            code: ({ node, ...props }: any) => <code className="bg-slate-700/50 rounded px-1 py-0.5 text-xs font-mono text-purple-200" {...props} />,
+                                            blockquote: ({ node, ...props }: any) => <blockquote className="border-l-2 border-purple-500/50 pl-3 italic text-slate-400 my-2" {...props} />,
+                                            a: ({ node, ...props }: any) => <a className="text-blue-400 hover:text-blue-300 hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
+                                        }}
+                                    >
+                                        {part}
+                                    </ReactMarkdown>
+                                </div>
+                            );
                         })}
                     </div>
                 </div>
             );
         }
 
-        // Custom Styled Labels
+        // Custom Styled Labels (Shorten, Recap, Follow-up) - also use Markdown for content
         if (msg.intent === 'shorten') {
             return (
                 <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3 my-1">
@@ -649,8 +677,15 @@ Provide only the answer, nothing else.`;
                         <MessageSquare className="w-3.5 h-3.5" />
                         <span>Shortened</span>
                     </div>
-                    <div className="text-slate-200 text-[13px] leading-relaxed whitespace-pre-wrap">
-                        {msg.text}
+                    <div className="text-slate-200 text-[13px] leading-relaxed markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                            p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
+                            strong: ({ node, ...props }: any) => <strong className="font-bold text-cyan-100" {...props} />,
+                            ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2" {...props} />,
+                            li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
+                        }}>
+                            {msg.text}
+                        </ReactMarkdown>
                     </div>
                 </div>
             );
@@ -663,8 +698,15 @@ Provide only the answer, nothing else.`;
                         <RefreshCw className="w-3.5 h-3.5" />
                         <span>Recap</span>
                     </div>
-                    <div className="text-slate-200 text-[13px] leading-relaxed whitespace-pre-wrap">
-                        {msg.text}
+                    <div className="text-slate-200 text-[13px] leading-relaxed markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                            p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
+                            strong: ({ node, ...props }: any) => <strong className="font-bold text-indigo-100" {...props} />,
+                            ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2" {...props} />,
+                            li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
+                        }}>
+                            {msg.text}
+                        </ReactMarkdown>
                     </div>
                 </div>
             );
@@ -677,8 +719,15 @@ Provide only the answer, nothing else.`;
                         <HelpCircle className="w-3.5 h-3.5" />
                         <span>Follow-Up Questions</span>
                     </div>
-                    <div className="text-slate-200 text-[13px] leading-relaxed whitespace-pre-wrap">
-                        {msg.text}
+                    <div className="text-slate-200 text-[13px] leading-relaxed markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                            p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
+                            strong: ({ node, ...props }: any) => <strong className="font-bold text-[#FFF9C4]" {...props} />,
+                            ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2" {...props} />,
+                            li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
+                        }}>
+                            {msg.text}
+                        </ReactMarkdown>
                     </div>
                 </div>
             );
@@ -746,15 +795,51 @@ Provide only the answer, nothing else.`;
                                     );
                                 }
                             }
-                            // Regular text
-                            return <div key={i} className="whitespace-pre-wrap">{part}</div>;
+                            // Regular text - Render Markdown
+                            return (
+                                <div key={i} className="markdown-content">
+                                    <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
+                                        components={{
+                                            p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0" {...props} />,
+                                            strong: ({ node, ...props }: any) => <strong className="font-bold text-emerald-100" {...props} />,
+                                            em: ({ node, ...props }: any) => <em className="italic text-emerald-200/80" {...props} />,
+                                            ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2 space-y-1" {...props} />,
+                                            ol: ({ node, ...props }: any) => <ol className="list-decimal ml-4 mb-2 space-y-1" {...props} />,
+                                            li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
+                                        }}
+                                    >
+                                        {part}
+                                    </ReactMarkdown>
+                                </div>
+                            );
                         })}
                     </div>
                 </div>
             );
         }
 
-        return msg.text;
+        // Standard Text Messages (e.g. from User or Interviewer)
+        // We still want basic markdown support here too
+        return (
+            <div className="markdown-content">
+                <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                        p: ({ node, ...props }: any) => <p className="mb-2 last:mb-0 whitespace-pre-wrap" {...props} />,
+                        strong: ({ node, ...props }: any) => <strong className="font-bold opacity-100" {...props} />,
+                        em: ({ node, ...props }: any) => <em className="italic opacity-90" {...props} />,
+                        ul: ({ node, ...props }: any) => <ul className="list-disc ml-4 mb-2 space-y-1" {...props} />,
+                        ol: ({ node, ...props }: any) => <ol className="list-decimal ml-4 mb-2 space-y-1" {...props} />,
+                        li: ({ node, ...props }: any) => <li className="pl-1" {...props} />,
+                        code: ({ node, ...props }: any) => <code className="bg-black/20 rounded px-1 py-0.5 text-xs font-mono" {...props} />,
+                        a: ({ node, ...props }: any) => <a className="underline hover:opacity-80" target="_blank" rel="noopener noreferrer" {...props} />,
+                    }}
+                >
+                    {msg.text}
+                </ReactMarkdown>
+            </div>
+        );
     };
 
     return (

@@ -1,3 +1,7 @@
+// electron/llm/RecapLLM.ts
+// MODE: Recap - Neutral conversation summary
+// Summarizes conversation in bullet points, no advice or opinions
+
 import { GoogleGenAI } from "@google/genai";
 import { MODE_CONFIGS } from "./types";
 import { buildRecapContents } from "./prompts";

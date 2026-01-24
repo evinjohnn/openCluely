@@ -1,3 +1,7 @@
+// electron/llm/AssistLLM.ts
+// MODE: Assist - Passive observation (low priority)
+// Provides brief observational insights, NEVER suggests what to say
+
 import { GoogleGenAI } from "@google/genai";
 import { MODE_CONFIGS } from "./types";
 import { ASSIST_MODE_PROMPT, buildContents } from "./prompts";

@@ -1,3 +1,7 @@
+// electron/llm/FollowUpLLM.ts
+// MODE: Follow-Up - Refinement of last answer
+// Modifies previous answer based on user request (shorter, longer, rephrase, etc.)
+
 import { GoogleGenAI } from "@google/genai";
 import { MODE_CONFIGS } from "./types";
 import { buildFollowUpContents } from "./prompts";

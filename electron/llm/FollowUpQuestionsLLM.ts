@@ -1,3 +1,7 @@
+// electron/llm/FollowUpQuestionsLLM.ts
+// MODE: Follow-Up Questions - Suggests strategic questions for the user
+// Active, triggered by user request
+
 import { GoogleGenAI } from "@google/genai";
 import { MODE_CONFIGS } from "./types";
 import { FOLLOW_UP_QUESTIONS_MODE_PROMPT, buildContents } from "./prompts";
