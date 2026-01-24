@@ -5,7 +5,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { MODE_CONFIGS } from "./types";
 import { FOLLOW_UP_QUESTIONS_MODE_PROMPT, buildContents } from "./prompts";
-import { clampResponse } from "./postProcessor";
 
 export class FollowUpQuestionsLLM {
     private client: GoogleGenAI;
@@ -44,9 +43,38 @@ export class FollowUpQuestionsLLM {
                 },
             });
 
-            const rawText = response.text
-                || response.candidates?.[0]?.content?.parts?.[0]?.text
-                || "";
+            // Try multiple ways to extract text - handle different response structures
+            let rawText = "";
+
+            // Method 1: Direct response.text
+            if (response.text) {
+                rawText = response.text;
+            }
+            // Method 2: candidate.content.parts array (check all parts)
+            else if (response.candidates?.[0]?.content?.parts) {
+                const candidate = response.candidates[0];
+                const parts = Array.isArray(candidate.content.parts) ? candidate.content.parts : [candidate.content.parts];
+                for (const part of parts) {
+                    if (part?.text) {
+                        rawText += part.text;
+                    }
+                }
+            }
+            // Method 3: candidate.content directly (if it's a string)
+            else if (response.candidates?.[0]?.content) {
+                const content = response.candidates[0].content;
+                if (typeof content === 'string') {
+                    rawText = content;
+                }
+            }
+
+            if (!rawText || rawText.trim().length === 0) {
+                console.error("[FollowUpQuestionsLLM] Empty response. Response structure:", JSON.stringify({
+                    hasResponseText: !!response.text,
+                    candidateContent: response.candidates?.[0]?.content,
+                    candidateParts: response.candidates?.[0]?.content?.parts,
+                }, null, 2));
+            }
 
             return rawText.trim();
 

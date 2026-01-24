@@ -41,7 +41,7 @@ export const MODE_CONFIGS = {
     } as GenerationConfig,
 
     followUpQuestions: {
-        maxOutputTokens: 512,
+        maxOutputTokens: 2048, // Increased to allow full 4 questions with context
         temperature: 0.4, // Slightly higher creative freedom
         topP: 0.9,
     } as GenerationConfig,

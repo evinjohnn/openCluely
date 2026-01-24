@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Ghost, MessageSquare, Link, Camera, X, Zap, Heart } from 'lucide-react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { MessageSquare, Link, Camera, Zap, Heart } from 'lucide-react';
 
 const SettingsPopup = () => {
     const [isUndetectable, setIsUndetectable] = useState(true);
@@ -41,9 +41,34 @@ const SettingsPopup = () => {
         }
     }, [useGeminiPro]);
 
+    const contentRef = useRef<HTMLDivElement>(null);
+
+    // Auto-resize Window
+    useLayoutEffect(() => {
+        if (!contentRef.current) return;
+
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const rect = entry.target.getBoundingClientRect();
+                try {
+                    // @ts-ignore
+                    window.electronAPI?.updateContentDimensions({
+                        width: Math.ceil(rect.width),
+                        height: Math.ceil(rect.height)
+                    });
+                } catch (e) {
+                    console.warn("Failed to update dimensions", e);
+                }
+            }
+        });
+
+        observer.observe(contentRef.current);
+        return () => observer.disconnect();
+    }, []);
+
     return (
-        <div className="w-full h-full bg-transparent p-2 flex flex-col">
-            <div className="w-full h-full bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-x-hidden overflow-y-auto shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
+        <div ref={contentRef} className="w-fit h-fit bg-transparent p-0 flex flex-col">
+            <div className="w-[calc(100vw*0.382)] max-w-[280px] min-w-[240px] bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-hidden shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
 
                 {/* Undetectability */}
                 <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-default">
@@ -58,9 +83,9 @@ const SettingsPopup = () => {
                     </div>
                     <button
                         onClick={() => setIsUndetectable(!isUndetectable)}
-                        className={`w-10 h-6 rounded-full p-0.5 transition-all duration-300 ease-spring active:scale-[0.92] ${isUndetectable ? 'bg-white shadow-[0_2px_8px_rgba(255,255,255,0.2)]' : 'bg-white/10'}`}
+                        className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${isUndetectable ? 'bg-white shadow-[0_2px_8px_rgba(255,255,255,0.2)]' : 'bg-white/10'}`}
                     >
-                        <div className={`w-5 h-5 rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${isUndetectable ? 'translate-x-4' : 'translate-x-0'}`} />
+                        <div className={`w-[15px] h-[15px] rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${isUndetectable ? 'translate-x-[12px]' : 'translate-x-0'}`} />
                     </button>
                 </div>
 
@@ -76,9 +101,9 @@ const SettingsPopup = () => {
                     </div>
                     <button
                         onClick={() => setUseGeminiPro(!useGeminiPro)}
-                        className={`w-10 h-6 rounded-full p-0.5 transition-all duration-300 ease-spring active:scale-[0.92] ${useGeminiPro ? 'bg-yellow-500 shadow-[0_2px_10px_rgba(234,179,8,0.3)]' : 'bg-white/10'}`}
+                        className={`w-[30px] h-[18px] rounded-full p-[1.5px] transition-all duration-300 ease-spring active:scale-[0.92] ${useGeminiPro ? 'bg-yellow-500 shadow-[0_2px_10px_rgba(234,179,8,0.3)]' : 'bg-white/10'}`}
                     >
-                        <div className={`w-5 h-5 rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${useGeminiPro ? 'translate-x-4' : 'translate-x-0'}`} />
+                        <div className={`w-[15px] h-[15px] rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${useGeminiPro ? 'translate-x-[12px]' : 'translate-x-0'}`} />
                     </button>
                 </div>
 
@@ -104,19 +129,6 @@ const SettingsPopup = () => {
                     </div>
                     <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                         <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">⌘</div>
-                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">H</div>
-                    </div>
-                </div>
-
-                {/* Selective Screenshot */}
-                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-pointer interaction-base interaction-press">
-                    <div className="flex items-center gap-3">
-                        <Camera className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-colors" />
-                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200 transition-colors">Area Screenshot</span>
-                    </div>
-                    <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">⌘</div>
-                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">⇧</div>
                         <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">H</div>
                     </div>
                 </div>

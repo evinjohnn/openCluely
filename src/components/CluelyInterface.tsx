@@ -618,10 +618,15 @@ Provide only the answer, nothing else.`;
         // Custom Styled Labels
         if (msg.intent === 'shorten') {
             return (
-                <span>
-                    <span className="text-cyan-400 font-bold">Shortened: </span>
-                    {msg.text}
-                </span>
+                <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-3 my-1">
+                    <div className="flex items-center gap-2 mb-2 text-cyan-300 font-semibold text-xs uppercase tracking-wide">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Shortened</span>
+                    </div>
+                    <div className="text-slate-200 text-[13px] leading-relaxed whitespace-pre-wrap">
+                        {msg.text}
+                    </div>
+                </div>
             );
         }
 
@@ -756,7 +761,7 @@ Provide only the answer, nothing else.`;
                                 {messages.map((msg) => (
                                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
                                         <div className={`
-                      max-w-[85%] px-4 py-3 text-[14px] leading-relaxed relative group whitespace-pre-wrap
+                      ${msg.role === 'user' ? 'max-w-[72.25%] px-[13.6px] py-[10.2px]' : 'max-w-[85%] px-4 py-3'} text-[14px] leading-relaxed relative group whitespace-pre-wrap
                       ${msg.role === 'user'
                                                 ? 'bg-blue-600/20 backdrop-blur-md border border-blue-500/30 text-blue-100 rounded-[20px] rounded-tr-[4px] shadow-sm font-medium'
                                                 : ''
@@ -962,7 +967,7 @@ Provide only the answer, nothing else.`;
                                                 const contentRect = contentRef.current.getBoundingClientRect();
                                                 const buttonRect = e.currentTarget.getBoundingClientRect();
                                                 const POPUP_WIDTH = 280; // Matches SettingsWindowHelper
-                                                const GAP = -24; // Visual gap 8px (accounts for p-4 on both main and settings: 32px total padding - 24px offset = 8px)
+                                                const GAP = 8; // Same gap as between TopPill and main body (gap-2 = 8px)
 
                                                 // X: Left-aligned relative to the Settings Button
                                                 const x = window.screenX + buttonRect.left;

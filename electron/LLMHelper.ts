@@ -1,6 +1,5 @@
 import { GoogleGenAI } from "@google/genai"
 import fs from "fs"
-import { clampResponse } from "./llm/postProcessor"
 import { HARD_SYSTEM_PROMPT } from "./llm/prompts"
 
 interface OllamaResponse {
@@ -10,6 +9,7 @@ interface OllamaResponse {
 
 // Model constant for Gemini 3 Flash
 const GEMINI_FLASH_MODEL = "gemini-3-flash-preview"
+const GEMINI_PRO_MODEL = "gemini-3-pro-preview"
 
 // Simple prompt for image analysis (not interview copilot - kept separate)
 const IMAGE_ANALYSIS_PROMPT = `Analyze concisely. Be direct. No markdown formatting. Return plain text only.`
@@ -164,14 +164,15 @@ export class LLMHelper {
   }
 
   /**
-   * Post-process and clamp the response
+   * Post-process the response
+   * NOTE: Truncation/clamping removed - response length is handled in prompts
    */
   private processResponse(text: string): string {
     // Basic cleaning
     let clean = this.cleanJsonResponse(text);
 
-    // Clamp to 3 sentences / 60 words
-    clean = clampResponse(clean, 3, 60);
+    // Truncation/clamping removed - prompts already handle response length
+    // clean = clampResponse(clean, 3, 60);
 
     // Filter out fallback phrases
     const fallbackPhrases = [
@@ -234,6 +235,7 @@ export class LLMHelper {
       const candidate = response.candidates?.[0];
       if (!candidate) {
         console.error("[LLMHelper] No candidates returned!");
+        console.error("[LLMHelper] Full response:", JSON.stringify(response, null, 2).substring(0, 1000));
         return "";
       }
 
@@ -242,13 +244,41 @@ export class LLMHelper {
         console.warn(`[LLMHelper] Safety ratings:`, JSON.stringify(candidate.safetyRatings));
       }
 
-      // Try different ways to access text
-      const text = response.text
-        || candidate.content?.parts?.[0]?.text
-        || "";
+      // Try multiple ways to access text - handle different response structures
+      let text = "";
 
-      if (!text) {
-        console.error("[LLMHelper] Candidate found but text is empty. Parts:", JSON.stringify(candidate.content?.parts));
+      // Method 1: Direct response.text
+      if (response.text) {
+        text = response.text;
+      }
+      // Method 2: candidate.content.parts array (check all parts)
+      else if (candidate.content?.parts) {
+        const parts = Array.isArray(candidate.content.parts) ? candidate.content.parts : [candidate.content.parts];
+        for (const part of parts) {
+          if (part?.text) {
+            text += part.text;
+          }
+        }
+      }
+      // Method 3: candidate.content directly (if it's a string)
+      else if (typeof candidate.content === 'string') {
+        text = candidate.content;
+      }
+
+      if (!text || text.trim().length === 0) {
+        console.error("[LLMHelper] Candidate found but text is empty.");
+        console.error("[LLMHelper] Response structure:", JSON.stringify({
+          hasResponseText: !!response.text,
+          candidateFinishReason: candidate.finishReason,
+          candidateContent: candidate.content,
+          candidateParts: candidate.content?.parts,
+        }, null, 2));
+
+        if (candidate.finishReason === "MAX_TOKENS") {
+          return "Response was truncated due to length limit. Please try a shorter question or break it into parts.";
+        }
+
+        return "";
       }
 
       console.log(`[LLMHelper] Extracted text length: ${text.length}`);
@@ -428,7 +458,6 @@ ANSWER DIRECTLY:`;
   public async chatWithGemini(message: string, imagePath?: string, context?: string): Promise<string> {
     try {
       console.log(`[LLMHelper] chatWithGemini called with message:`, message.substring(0, 50))
-      let rawResponse: string;
 
       // Build context-aware prompt
       let fullMessage = `${HARD_SYSTEM_PROMPT}\n\n${message}`;
@@ -436,38 +465,94 @@ ANSWER DIRECTLY:`;
         fullMessage = `${HARD_SYSTEM_PROMPT}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`;
       }
 
-      if (imagePath) {
-        // Multimodal chat
-        const imageData = await fs.promises.readFile(imagePath);
-        const contents = [
-          { text: fullMessage },
-          {
-            inlineData: {
-              mimeType: "image/png",
-              data: imageData.toString("base64")
-            }
-          }
-        ];
+      // Try with current model first
+      let rawResponse = await this.tryGenerateResponse(fullMessage, imagePath);
 
-        // Use Flash for multimodal
-        rawResponse = await this.generateWithFlash(contents);
-      } else {
-        // Text-only chat
-        if (this.useOllama) {
-          rawResponse = await this.callOllama(fullMessage);
-        } else if (this.client) {
-          // Use the selected model for chat, injecting system prompt + context
-          rawResponse = await this.generateContent([{ text: fullMessage }])
-        } else {
-          throw new Error("No LLM provider configured");
+      // If response is empty/undefined, retry with same model
+      if (!rawResponse || rawResponse.trim().length === 0) {
+        console.warn("[LLMHelper] Empty response, retrying with same model...");
+        rawResponse = await this.tryGenerateResponse(fullMessage, imagePath);
+      }
+
+      // If still empty, retry with Gemini 3 Pro
+      if (!rawResponse || rawResponse.trim().length === 0) {
+        console.warn("[LLMHelper] Still empty after retry, switching to Gemini 3 Pro...");
+        const originalModel = this.geminiModel;
+        this.geminiModel = GEMINI_PRO_MODEL;
+        try {
+          rawResponse = await this.tryGenerateResponse(fullMessage, imagePath);
+        } finally {
+          this.geminiModel = originalModel;
         }
       }
 
-      return this.processResponse(rawResponse);
+      // If still empty after all retries, return error message
+      if (!rawResponse || rawResponse.trim().length === 0) {
+        console.error("[LLMHelper] All retry attempts failed, returning error message");
+        return "I apologize, but I couldn't generate a response. Please try again.";
+      }
+
+      try {
+        return this.processResponse(rawResponse);
+      } catch (processError) {
+        // If processResponse throws (e.g., filtered fallback), retry with Pro once
+        console.warn("[LLMHelper] processResponse failed, retrying with Pro model...", processError);
+        const originalModel = this.geminiModel;
+        this.geminiModel = GEMINI_PRO_MODEL;
+        try {
+          const retryResponse = await this.tryGenerateResponse(fullMessage, imagePath);
+          if (retryResponse && retryResponse.trim().length > 0) {
+            try {
+              return this.processResponse(retryResponse);
+            } catch {
+              // If Pro also gets filtered, return full raw response (no truncation)
+              return retryResponse;
+            }
+          }
+        } finally {
+          this.geminiModel = originalModel;
+        }
+        return "I apologize, but I couldn't generate a response. Please try again.";
+      }
     } catch (error) {
       console.error("[LLMHelper] Error in chatWithGemini:", error);
       throw error;
     }
+  }
+
+  private async tryGenerateResponse(fullMessage: string, imagePath?: string): Promise<string> {
+    let rawResponse: string;
+
+    if (imagePath) {
+      const imageData = await fs.promises.readFile(imagePath);
+      const contents = [
+        { text: fullMessage },
+        {
+          inlineData: {
+            mimeType: "image/png",
+            data: imageData.toString("base64")
+          }
+        }
+      ];
+
+      // Use current model for multimodal (allows Pro fallback)
+      if (this.client) {
+        rawResponse = await this.generateContent(contents);
+      } else {
+        throw new Error("No LLM provider configured");
+      }
+    } else {
+      // Text-only chat
+      if (this.useOllama) {
+        rawResponse = await this.callOllama(fullMessage);
+      } else if (this.client) {
+        rawResponse = await this.generateContent([{ text: fullMessage }])
+      } else {
+        throw new Error("No LLM provider configured");
+      }
+    }
+
+    return rawResponse || "";
   }
 
   public async chat(message: string): Promise<string> {

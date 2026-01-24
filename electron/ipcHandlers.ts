@@ -107,7 +107,13 @@ export function initializeIpcHandlers(appState: AppState): void {
     try {
       const result = await appState.processingHelper.getLLMHelper().chatWithGemini(message, imagePath, context);
 
-      console.log(`[IPC] gemini-chat response:`, result.substring(0, 50));
+      console.log(`[IPC] gemini-chat response:`, result ? result.substring(0, 50) : "(empty)");
+
+      // Don't process empty responses
+      if (!result || result.trim().length === 0) {
+        console.warn("[IPC] Empty response from LLM, not updating IntelligenceManager");
+        return "I apologize, but I couldn't generate a response. Please try again.";
+      }
 
       // Sync with IntelligenceManager so Follow-Up/Recap work
       const intelligenceManager = appState.getIntelligenceManager();
