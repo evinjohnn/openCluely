@@ -63,9 +63,9 @@ const NativelyInterface = () => {
     const [attachedContext, setAttachedContext] = useState<{ path: string, preview: string } | null>(null);
 
     // Settings State with Persistence
-    const [isUndetectable, setIsUndetectable] = useState(() => localStorage.getItem('cluely_undetectable') === 'true');
+    const [isUndetectable, setIsUndetectable] = useState(true);
     const [hideChatHidesWidget, setHideChatHidesWidget] = useState(() => {
-        const stored = localStorage.getItem('cluely_hideChatHidesWidget');
+        const stored = localStorage.getItem('natively_hideChatHidesWidget');
         return stored ? stored === 'true' : true;
     });
 
@@ -81,17 +81,14 @@ const NativelyInterface = () => {
 
         const observer = new ResizeObserver((entries) => {
             for (const entry of entries) {
-                const height = entry.contentRect.height;
-                // Add padding to height to account for the container padding
-                // The p-4 class adds 1rem (16px) on top and bottom, so +32px
-                // But contentRect might include padding depending on box-sizing?
-                // contentRect acts like the content box.
-                // It's safer to use scrollHeight or clientHeight of the wrapper.
+                // Use getBoundingClientRect to get the exact rendered size including padding
+                const rect = entry.target.getBoundingClientRect();
 
-                // Let's rely on entry.contentRect.height + vertical padding (32px from p-4)
+                // Send exact dimensions to Electron
+                // Removed buffer to ensure tight fit
                 window.electronAPI?.updateContentDimensions({
-                    width: 640,
-                    height: Math.ceil(height + 32)
+                    width: Math.ceil(rect.width),
+                    height: Math.ceil(rect.height)
                 });
             }
         });
@@ -730,7 +727,7 @@ Provide only the answer, nothing else.`;
     };
 
     return (
-        <div ref={contentRef} className="flex flex-col items-center w-full min-h-0 bg-transparent p-4 font-sans text-slate-200 gap-2">
+        <div ref={contentRef} className="flex flex-col items-center w-fit mx-auto min-h-0 bg-transparent p-0 rounded-[24px] font-sans text-slate-200 gap-2">
 
             {isExpanded && (
                 <>
@@ -741,14 +738,14 @@ Provide only the answer, nothing else.`;
                     />
                     <div className="
                     relative w-full max-w-[640px] 
-                    bg-[#2B2C2F]/90 
-                    backdrop-blur-xl
-                    border border-white/15 
-                    shadow-2xl 
-                    rounded-[22px] 
+                    bg-[#1E1E1E]/95
+                    backdrop-blur-2xl
+                    border border-white/10
+                    shadow-2xl shadow-black/40
+                    rounded-[24px] 
                     overflow-hidden 
                     flex flex-col
-                    animate-in fade-in slide-in-from-bottom-2 duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
+                    animate-in fade-in slide-in-from-bottom-4 duration-500 ease-sculpted
                 ">
 
 
@@ -757,19 +754,19 @@ Provide only the answer, nothing else.`;
                         {messages.length > 0 && (
                             <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[350px]" style={{ scrollbarWidth: 'none' }}>
                                 {messages.map((msg) => (
-                                    <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                                    <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>
                                         <div className={`
-                      max-w-[85%] px-3.5 py-2.5 text-[13px] leading-relaxed relative group whitespace-pre-wrap
+                      max-w-[85%] px-4 py-3 text-[14px] leading-relaxed relative group whitespace-pre-wrap
                       ${msg.role === 'user'
-                                                ? 'bg-[#007AFF] text-white rounded-[18px] rounded-tr-[4px] shadow-sm'
+                                                ? 'bg-blue-600/20 backdrop-blur-md border border-blue-500/30 text-blue-100 rounded-[20px] rounded-tr-[4px] shadow-sm font-medium'
                                                 : ''
                                             }
                       ${msg.role === 'system'
-                                                ? 'text-slate-300'
+                                                ? 'text-slate-200 font-normal'
                                                 : ''
                                             }
                       ${msg.role === 'interviewer'
-                                                ? 'text-slate-500/80 italic pl-0'
+                                                ? 'text-white/40 italic pl-0 text-[13px]'
                                                 : ''
                                             }
                     `}>
@@ -824,28 +821,24 @@ Provide only the answer, nothing else.`;
                         )}
 
                         {/* Quick Actions - Minimal & Clean */}
-                        <div className="flex justify-center items-center gap-1 px-4 py-2 border-t border-white/[0.06]">
-                            <button onClick={handleWhatToSay} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all active:scale-95 duration-200">
+                        <div className="flex justify-center items-center gap-1.5 px-4 py-3 border-t border-white/[0.06]">
+                            <button onClick={handleWhatToSay} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press">
                                 <Pencil className="w-3 h-3 opacity-70" /> What to answer?
                             </button>
-                            <div className="w-px h-3 bg-white/5 mx-1" />
-                            <button onClick={() => handleFollowUp('shorten')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all active:scale-95 duration-200">
+                            <button onClick={() => handleFollowUp('shorten')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press">
                                 <MessageSquare className="w-3 h-3 opacity-70" /> Shorten
                             </button>
-                            <div className="w-px h-3 bg-white/5 mx-1" />
-                            <button onClick={handleRecap} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all active:scale-95 duration-200">
+                            <button onClick={handleRecap} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press">
                                 <RefreshCw className="w-3 h-3 opacity-70" /> Recap
                             </button>
-                            <div className="w-px h-3 bg-white/5 mx-1" />
-                            <button onClick={handleFollowUpQuestions} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all active:scale-95 duration-200">
-                                <HelpCircle className="w-3 h-3 opacity-70" /> Follow Up Questions
+                            <button onClick={handleFollowUpQuestions} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press">
+                                <HelpCircle className="w-3 h-3 opacity-70" /> Follow Up Question
                             </button>
-                            <div className="w-px h-3 bg-white/5 mx-1" />
                             <button
                                 onClick={handleAnswerNow}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all active:scale-95 duration-200 ${isManualRecording
+                                className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all active:scale-95 duration-200 interaction-base interaction-press min-w-[74px] ${isManualRecording
                                     ? 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20'
-                                    : 'text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/5'
+                                    : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10'
                                     }`}
                             >
                                 {isManualRecording ? (
@@ -860,7 +853,7 @@ Provide only the answer, nothing else.`;
                         </div>
 
                         {/* Input Area */}
-                        <div className="p-3 border-t border-white/[0.06]">
+                        <div className="p-3 pt-0">
                             {/* Latent Context Preview (Attached Screenshot) */}
                             {attachedContext && (
                                 <div className="mb-2 flex items-center justify-between bg-white/5 border border-white/10 rounded-lg p-2 animate-in fade-in slide-in-from-bottom-1">
@@ -897,17 +890,19 @@ Provide only the answer, nothing else.`;
 
                                     className="
                                     w-full 
-                                    bg-[#3A3B3F] 
-                                    hover:bg-[#45464B] 
-                                    focus:bg-[#45464B]
-                                    border border-transparent 
+                                    bg-[#1E1E1E] 
+                                    hover:bg-[#252525] 
+                                    focus:bg-[#1E1E1E]
+                                    border border-white/5 
                                     focus:border-white/10
+                                    focus:ring-1 focus:ring-white/10
                                     rounded-xl 
                                     pl-3 pr-10 py-2.5 
                                     text-slate-200 
                                     focus:outline-none 
-                                    transition-all duration-200 
+                                    transition-all duration-200 ease-sculpted
                                     text-[13px] leading-relaxed
+                                    placeholder:text-slate-500
                                 "
                                 />
 
@@ -932,7 +927,7 @@ Provide only the answer, nothing else.`;
                             </div>
 
                             {/* Bottom Row */}
-                            <div className="flex items-center justify-between mt-2.5 px-0.5">
+                            <div className="flex items-center justify-between mt-3 px-0.5">
                                 <div className="flex items-center gap-1.5">
                                     <button className="
                                     flex items-center gap-1.5 
@@ -943,6 +938,7 @@ Provide only the answer, nothing else.`;
                                     rounded-md 
                                     text-[10px] font-semibold tracking-wide uppercase
                                     transition-colors
+                                    interaction-base interaction-press
                                 ">
                                         <Sparkles className="w-2.5 h-2.5" />
                                         Smart
@@ -978,7 +974,7 @@ Provide only the answer, nothing else.`;
                                             }}
                                             className={`
                                             w-7 h-7 flex items-center justify-center rounded-lg 
-                                            transition-all duration-200 hover:scale-[1.05] active:scale-[0.95]
+                                            interaction-base interaction-press
                                             ${isSettingsOpen ? 'text-white bg-white/10' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}
                                         `}
                                             title="Settings"
@@ -994,9 +990,9 @@ Provide only the answer, nothing else.`;
                                     disabled={!inputValue.trim()}
                                     className={`
                                     w-7 h-7 rounded-full flex items-center justify-center 
-                                    transition-all duration-200 
+                                    interaction-base interaction-press
                                     ${inputValue.trim()
-                                            ? 'bg-[#007AFF] text-white shadow-lg shadow-blue-500/20 hover:bg-[#0071E3] hover:scale-[1.05] active:scale-[0.95]'
+                                            ? 'bg-[#007AFF] text-white shadow-lg shadow-blue-500/20 hover:bg-[#0071E3]'
                                             : 'bg-white/5 text-white/10 cursor-not-allowed'
                                         }
                                 `}

@@ -278,6 +278,10 @@ export function initializeIpcHandlers(appState: AppState): void {
     return { connected: appState.isNativeAudioConnected() };
   });
 
+  ipcMain.handle("open-external", async (event, url: string) => {
+    await shell.openExternal(url);
+  });
+
   // ==========================================
   // Intelligence Mode Handlers
   // ==========================================

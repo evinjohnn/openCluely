@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Ghost, MessageSquare, Link, Camera, X, Zap } from 'lucide-react';
+import { Ghost, MessageSquare, Link, Camera, X, Zap, Heart } from 'lucide-react';
 
 const SettingsPopup = () => {
-    const [isUndetectable, setIsUndetectable] = useState(() => localStorage.getItem('natively_undetectable') === 'true');
+    const [isUndetectable, setIsUndetectable] = useState(true);
     const [useGeminiPro, setUseGeminiPro] = useState(() => {
         return localStorage.getItem('natively_model_preference') === 'pro';
     });
@@ -42,74 +42,101 @@ const SettingsPopup = () => {
     }, [useGeminiPro]);
 
     return (
-        <div className="w-full h-full bg-transparent p-4 flex flex-col">
-            <div className="w-full h-auto bg-[#2B2C2F]/90 backdrop-blur-xl border border-white/15 rounded-xl overflow-hidden shadow-[0_6px_30px_rgba(0,0,0,0.35)] p-1.5 flex flex-col">
-
+        <div className="w-full h-full bg-transparent p-2 flex flex-col">
+            <div className="w-full h-full bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-hidden shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
 
                 {/* Undetectability */}
-                <div className="flex items-center justify-between px-3 py-2.5 hover:bg-white/5 rounded-lg transition-colors group">
-                    <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-default">
+                    <div className="flex items-center gap-3">
                         <CustomGhost
-                            className="w-4 h-4 text-slate-400 group-hover:text-slate-200"
+                            className={`w-4 h-4 transition-colors ${isUndetectable ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`}
                             fill={isUndetectable ? "currentColor" : "none"}
                             stroke={isUndetectable ? "none" : "currentColor"}
                             eyeColor={isUndetectable ? "black" : "white"}
                         />
-                        <span className="text-[13px] text-slate-300 group-hover:text-white font-medium">{isUndetectable ? 'Undetectable' : 'Detectable'}</span>
+                        <span className={`text-[12px] font-medium transition-colors ${isUndetectable ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'}`}>{isUndetectable ? 'Undetectable' : 'Detectable'}</span>
                     </div>
                     <button
                         onClick={() => setIsUndetectable(!isUndetectable)}
-                        className={`w-9 h-5 rounded-full p-0.5 transition-colors ${isUndetectable ? 'bg-white' : 'bg-slate-700'}`}
+                        className={`w-10 h-6 rounded-full p-0.5 transition-all duration-300 ease-spring active:scale-[0.92] ${isUndetectable ? 'bg-white shadow-[0_2px_8px_rgba(255,255,255,0.2)]' : 'bg-white/10'}`}
                     >
-                        <div className={`w-4 h-4 rounded-full bg-black shadow-sm transition-transform ${isUndetectable ? 'translate-x-4' : 'translate-x-0'}`} />
+                        <div className={`w-5 h-5 rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${isUndetectable ? 'translate-x-4' : 'translate-x-0'}`} />
                     </button>
                 </div>
 
+
                 {/* Gemini 3 Pro Toggle */}
-                <div className="flex items-center justify-between px-3 py-2.5 hover:bg-white/5 rounded-lg transition-colors group">
-                    <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-default">
+                    <div className="flex items-center gap-3">
                         <Zap
-                            className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400"
+                            className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400 transition-colors"
                             fill={useGeminiPro ? "currentColor" : "none"}
                         />
-                        <span className="text-[13px] text-slate-300 group-hover:text-white font-medium">Gemini 3 Pro</span>
+                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200 font-medium transition-colors">Gemini 3 Pro</span>
                     </div>
                     <button
                         onClick={() => setUseGeminiPro(!useGeminiPro)}
-                        className={`w-9 h-5 rounded-full p-0.5 transition-colors ${useGeminiPro ? 'bg-yellow-500' : 'bg-slate-700'}`}
+                        className={`w-10 h-6 rounded-full p-0.5 transition-all duration-300 ease-spring active:scale-[0.92] ${useGeminiPro ? 'bg-yellow-500 shadow-[0_2px_10px_rgba(234,179,8,0.3)]' : 'bg-white/10'}`}
                     >
-                        <div className={`w-4 h-4 rounded-full bg-black shadow-sm transition-transform ${useGeminiPro ? 'translate-x-4' : 'translate-x-0'}`} />
+                        <div className={`w-5 h-5 rounded-full bg-black shadow-sm transition-transform duration-300 ease-spring ${useGeminiPro ? 'translate-x-4' : 'translate-x-0'}`} />
                     </button>
                 </div>
 
-                <div className="h-px bg-white/5 my-1" />
+                <div className="h-px bg-white/[0.04] my-0.5 mx-2" />
 
                 {/* Show/Hide Cluely */}
-                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors group">
-                    <div className="flex items-center gap-2.5">
-                        <MessageSquare className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300" />
-                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200">Show/Hide Natively</span>
+                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-pointer interaction-base interaction-press">
+                    <div className="flex items-center gap-3">
+                        <MessageSquare className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-colors" />
+                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200 transition-colors">Show/Hide Natively</span>
                     </div>
-                    <div className="flex gap-1">
-                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-mono">⌘</div>
-                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-mono">\</div>
+                    <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">⌘</div>
+                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">B</div>
                     </div>
                 </div>
-
-
 
                 {/* Screenshot */}
-                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors group">
-                    <div className="flex items-center gap-2.5">
-                        <Camera className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300" />
-                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200">Screenshot</span>
+                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-pointer interaction-base interaction-press">
+                    <div className="flex items-center gap-3">
+                        <Camera className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-colors" />
+                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200 transition-colors">Screenshot</span>
                     </div>
-                    <div className="flex gap-1">
-                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-mono">⌘</div>
-                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-mono">H</div>
+                    <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">⌘</div>
+                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">H</div>
                     </div>
                 </div>
 
+                {/* Selective Screenshot */}
+                <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-pointer interaction-base interaction-press">
+                    <div className="flex items-center gap-3">
+                        <Camera className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-colors" />
+                        <span className="text-[12px] text-slate-400 group-hover:text-slate-200 transition-colors">Area Screenshot</span>
+                    </div>
+                    <div className="flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">⌘</div>
+                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">⇧</div>
+                        <div className="px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-[10px] text-slate-500 font-medium">H</div>
+                    </div>
+                </div>
+
+                <div className="h-px bg-white/[0.04] my-0.5 mx-2" />
+
+                {/* Donate */}
+                <div
+                    // @ts-ignore
+                    onClick={() => window.electronAPI.openExternal('https://ko-fi.com/evinjohnn')}
+                    className="flex items-center justify-between px-3 py-2 hover:bg-pink-500/10 rounded-lg transition-colors duration-200 group cursor-pointer interaction-base interaction-press"
+                >
+                    <div className="flex items-center gap-3">
+                        <Heart className="w-3.5 h-3.5 text-pink-400 group-hover:fill-pink-400 transition-all duration-300" />
+                        <span className="text-[12px] text-slate-400 group-hover:text-pink-100 transition-colors">Donate</span>
+                    </div>
+                    <div className="opacity-60 group-hover:opacity-100 transition-opacity">
+                        <Link className="w-3 h-3 text-slate-500 group-hover:text-pink-400" />
+                    </div>
+                </div>
 
             </div>
         </div>

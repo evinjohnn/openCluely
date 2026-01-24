@@ -33,7 +33,7 @@ struct GoogleClaims: Claims {
 }
 
 /// Manages fetching and refreshing OAuth2 tokens for Google Cloud
-final class ServiceAccountTokenProvider {
+final class ServiceAccountTokenProvider: @unchecked Sendable {
     
     private let serviceAccount: ServiceAccount
     private var currentToken: String?

@@ -15,6 +15,8 @@ export class SettingsWindowHelper {
     private offsetX: number = 0
     private offsetY: number = 0
 
+    private lastBlurTime: number = 0
+
     constructor() { }
 
     public toggleWindow(x?: number, y?: number): void {
@@ -26,6 +28,11 @@ export class SettingsWindowHelper {
         }
 
         if (this.settingsWindow && !this.settingsWindow.isDestroyed()) {
+            // Fix: If window was just closed by blur (e.g. clicking the toggle button), don't re-open immediately
+            if (!this.settingsWindow.isVisible() && (Date.now() - this.lastBlurTime < 250)) {
+                return;
+            }
+
             if (this.settingsWindow.isVisible()) {
                 this.settingsWindow.hide()
             } else {
@@ -117,7 +124,7 @@ export class SettingsWindowHelper {
 
     private createWindow(x?: number, y?: number): void {
         const windowSettings: Electron.BrowserWindowConstructorOptions = {
-            width: 280, // Increased for shadow padding
+            width: 270, // Increased for better proportions
             height: 280,
             frame: false,
             transparent: true,
@@ -162,6 +169,7 @@ export class SettingsWindowHelper {
         this.settingsWindow.on('blur', () => {
             // Check if focus moved to advanced window
             if (this.advancedWindow && this.advancedWindow.isFocused()) return;
+            this.lastBlurTime = Date.now();
             this.closeWindow();
         })
 

@@ -30,7 +30,7 @@ export class FollowUpQuestionsLLM {
 
             const contents = buildContents(
                 FOLLOW_UP_QUESTIONS_MODE_PROMPT,
-                "Suggest 4 follow-up questions based on this context.",
+                "Suggest MAX 4 brief follow-up questions based on this context.",
                 context
             );
 

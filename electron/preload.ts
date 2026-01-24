@@ -226,6 +226,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   toggleWindow: () => ipcRenderer.invoke("toggle-window"),
   showWindow: () => ipcRenderer.invoke("show-window"),
   hideWindow: () => ipcRenderer.invoke("hide-window"),
+  openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
   setUndetectable: (state: boolean) => ipcRenderer.invoke("set-undetectable", state),
 
   onSettingsVisibilityChange: (callback: (isVisible: boolean) => void) => {

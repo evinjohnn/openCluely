@@ -58,9 +58,11 @@ export const RECAP_MODE_PROMPT = `Summarize the conversation in 3-5 short bullet
 Neutral, past tense. No advice or opinions.`;
 
 // Mode 5: FOLLOW-UP QUESTIONS - Suggest questions for the user to ask
-export const FOLLOW_UP_QUESTIONS_MODE_PROMPT = `Based on the context, suggest 4 strategic follow-up questions the USER can ask the INTERVIEWER.
-Focus on clarifying requirements, demonstrating deep understanding, or uncovering hidden needs.
-Output ONLY the 4 questions as a bulleted list. No intro/outro.`;
+export const FOLLOW_UP_QUESTIONS_MODE_PROMPT = `Suggest MAX 4 short, strategic questions the CANDIDATE can ask the INTERVIEWER.
+Focus on: clarifying constraints, uncovering edge cases, or showing architectural foresight.
+AVOID: generic definitions (e.g. "What is X?") or basic knowledge checks.
+Keep them brief, punchy, and under 15 words each.
+Output ONLY the questions as a bulleted list.`;
 
 /**
  * Build Gemini contents array with 3-layer structure

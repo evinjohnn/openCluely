@@ -50,7 +50,7 @@ export class WindowHelper {
     )
 
     // Ensure width doesn't exceed max allowed width and height is reasonable
-    const newWidth = Math.min(width + 32, maxAllowedWidth)
+    const newWidth = Math.min(width, maxAllowedWidth)
     const newHeight = Math.ceil(height)
 
     // Center the window horizontally if it would go off screen

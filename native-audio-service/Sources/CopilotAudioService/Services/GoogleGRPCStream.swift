@@ -3,7 +3,7 @@ import GRPC
 import NIO
 import SwiftProtobuf
 
-final class GoogleGRPCStream: STTStreamProtocol {
+final class GoogleGRPCStream: STTStreamProtocol, @unchecked Sendable {
     
     weak var delegate: STTStreamDelegate?
     let source: AudioSource
@@ -47,7 +47,7 @@ final class GoogleGRPCStream: STTStreamProtocol {
                 // KeepAlive is critical for long-running streams
                 let keepalive = ClientConnectionKeepalive(
                     interval: .seconds(30),
-                    timeout: .seconds(10),
+                    timeout: .seconds(20), // Increased from 10s
                     permitWithoutCalls: true
                 )
                 
@@ -167,6 +167,8 @@ final class GoogleGRPCStream: STTStreamProtocol {
     }
     
     func sendAudio(_ audioData: Data) {
+        Logger.log("GoogleGRPC[\(source.rawValue)] sendAudio called with \(audioData.count) bytes. Connected: \(isConnected)", level: .debug)
+        
         bufferLock.lock()
         defer { bufferLock.unlock() }
         
@@ -188,7 +190,7 @@ final class GoogleGRPCStream: STTStreamProtocol {
         bufferLock.lock()
         defer { bufferLock.unlock() }
         
-        Logger.log("GoogleGRPC[\(source.rawValue)] flushing \(pendingAudioBuffer.count) chunks", level: .debug)
+        Logger.log("GoogleGRPC[\(source.rawValue)] flushing \(pendingAudioBuffer.count) chunks", level: .info)
         
         for data in pendingAudioBuffer {
             sendDataToStream(data)
@@ -199,11 +201,18 @@ final class GoogleGRPCStream: STTStreamProtocol {
     private func sendDataToStream(_ data: Data) {
         guard let stream = stream else { return }
         
+        Logger.log("GoogleGRPC[\(source.rawValue)] sending chunk: \(data.count) bytes", level: .debug)
+        
         var request = Google_Cloud_Speech_V2_StreamingRecognizeRequest()
         request.audio = data
         
-        // We use a void promise because we don't need to wait for individual chunks
-        stream.sendMessage(request, promise: nil)
+        // Use promise to track send failures
+        let promise = stream.eventLoop.makePromise(of: Void.self)
+        stream.sendMessage(request, promise: promise)
+        
+        promise.futureResult.whenFailure { [weak self] error in
+             Logger.log("GoogleGRPC[\(self?.source.rawValue ?? "?")] send failed: \(error)", level: .error)
+        }
     }
     
     func disconnect() {
