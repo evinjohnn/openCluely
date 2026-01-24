@@ -235,6 +235,8 @@ final class GoogleGRPCStream: STTStreamProtocol, @unchecked Sendable {
     }
     
     private func handleResponse(_ response: Google_Cloud_Speech_V2_StreamingRecognizeResponse) {
+        Logger.log("GoogleGRPC[\(source.rawValue)] received response: results=\(response.results.count), speechEventType=\(response.speechEventType)", level: .debug)
+        
         // V2 can return empty results (e.g. metadata updates), ignore them
         guard !response.results.isEmpty else { return }
         

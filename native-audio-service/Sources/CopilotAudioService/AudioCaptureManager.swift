@@ -1,5 +1,5 @@
 import Foundation
-import AVFAudio
+import AVFoundation
 import CoreAudio
 
 /// Audio format constants for STT compatibility
@@ -148,7 +148,12 @@ final class AudioCaptureManager {
     
     private func configureMicrophonePipeline() throws {
         let inputNode = micEngine.inputNode
-        
+        // Check permission
+        if #available(macOS 10.14, *) {
+            let status = AVCaptureDevice.authorizationStatus(for: .audio)
+            Logger.log("Microphone Permission Status: \(status.rawValue) (0=notDetermined, 1=restricted, 2=denied, 3=authorized)", level: .info)
+        }
+
         // Enable echo cancellation (Voice Processing I/O)
         // This prevents the mic from picking up the interviewer's voice from speakers
         if #available(macOS 11.0, *) {
@@ -161,6 +166,7 @@ final class AudioCaptureManager {
         }
         
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        Logger.log("Microphone Input Format: \(inputFormat)", level: .info)
         
         guard inputFormat.sampleRate > 0 else {
             throw AudioCaptureError.invalidInputFormat
@@ -170,6 +176,13 @@ final class AudioCaptureManager {
         micConverter = AVAudioConverter(from: inputFormat, to: targetFormat)
         guard let converter = micConverter else {
             throw AudioCaptureError.converterCreationFailed
+        }
+        
+        // If input has multiple channels, force use of the first one to avoid silence if others are empty
+        if inputFormat.channelCount > 1 {
+            // Map input channel 0 to output channel 0
+            converter.channelMap = [0] 
+            Logger.log("Applied channel map: [0] (Input has \(inputFormat.channelCount) channels)", level: .info)
         }
         
         // Calculate buffer size for ~100ms chunks at input sample rate
@@ -259,11 +272,45 @@ final class AudioCaptureManager {
             
             do {
                 let convertedData = try self.convertToTargetFormat(buffer: buffer, converter: converter)
-                Logger.log("Audio converted \(source.rawValue): \(convertedData.count) bytes", level: .debug)
+                // Logger.log("Audio converted \(source.rawValue): \(convertedData.count) bytes", level: .debug)
+                
+                // Check for silence
+                self.checkSilence(data: convertedData, source: source)
+                
                 self.delegate?.audioCaptureManager(self, didCapture: convertedData, from: source)
             } catch {
                 Logger.log("Audio conversion error \(source.rawValue): \(error)", level: .error)
                 self.delegate?.audioCaptureManager(self, didEncounterError: error, from: source)
+            }
+        }
+    }
+    
+    private func checkSilence(data: Data, source: AudioSource) {
+        let sampleCount = data.count / MemoryLayout<Int16>.size
+        guard sampleCount > 0 else { return }
+        
+        data.withUnsafeBytes { buffer in
+            guard let int16Buffer = buffer.bindMemory(to: Int16.self).baseAddress else { return }
+            
+            var sum: Float = 0
+            // Check sample subset to save CPU
+            let step = 10
+            let iterations = sampleCount / step
+            
+            guard iterations > 0 else { return }
+            
+            for i in 0..<iterations {
+                let sample = Float(int16Buffer[i * step])
+                sum += sample * sample
+            }
+            
+            let rms = sqrt(sum / Float(iterations))
+            
+            // Threshold for "silence" - typically purely digital silence is 0, but low noise floor might be < 100
+            if rms < 50.0 {
+                // Only log occasionally or it will spam
+                // implementation detail: could add a rate limiter here, but for now we just log
+                 Logger.log("Potential silence from \(source.rawValue) (RMS: \(Int(rms)))", level: .warning)
             }
         }
     }
