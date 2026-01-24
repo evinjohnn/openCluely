@@ -827,32 +827,32 @@ Provide only the answer, nothing else.`;
 
                         {/* Quick Actions - Minimal & Clean */}
                         <div className="flex flex-nowrap justify-center items-center gap-1.5 px-4 py-3 border-t border-white/[0.06] overflow-x-hidden">
-                            <button onClick={handleWhatToSay} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0">
+                            <button onClick={handleWhatToSay} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 h-[32px]">
                                 <Pencil className="w-3 h-3 opacity-70" /> What to answer?
                             </button>
-                            <button onClick={() => handleFollowUp('shorten')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0">
+                            <button onClick={() => handleFollowUp('shorten')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 h-[32px]">
                                 <MessageSquare className="w-3 h-3 opacity-70" /> Shorten
                             </button>
-                            <button onClick={handleRecap} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0">
+                            <button onClick={handleRecap} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 h-[32px]">
                                 <RefreshCw className="w-3 h-3 opacity-70" /> Recap
                             </button>
-                            <button onClick={handleFollowUpQuestions} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0">
+                            <button onClick={handleFollowUpQuestions} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-slate-400 bg-white/5 border border-white/0 hover:text-slate-200 hover:bg-white/10 hover:border-white/5 transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 h-[32px]">
                                 <HelpCircle className="w-3 h-3 opacity-70" /> Follow Up Question
                             </button>
                             <button
                                 onClick={handleAnswerNow}
-                                className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all active:scale-95 duration-200 interaction-base interaction-press min-w-[74px] whitespace-nowrap shrink-0 ${isManualRecording
-                                    ? 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20'
-                                    : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10'
+                                className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium transition-all active:scale-95 duration-200 interaction-base interaction-press whitespace-nowrap shrink-0 w-[74px] h-[32px] ${isManualRecording
+                                    ? 'bg-red-500/10 text-red-400 border border-red-500/20'
+                                    : 'bg-white/5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 border border-white/0'
                                     }`}
                             >
                                 {isManualRecording ? (
                                     <>
-                                        <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                                        <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
                                         Stop
                                     </>
                                 ) : (
-                                    <><Zap className="w-3 h-3 opacity-70" /> Answer</>
+                                    <><Zap className="w-4 h-4 text-slate-400" /> Answer</>
                                 )}
                             </button>
                         </div>
@@ -966,7 +966,7 @@ Provide only the answer, nothing else.`;
 
                                                 const contentRect = contentRef.current.getBoundingClientRect();
                                                 const buttonRect = e.currentTarget.getBoundingClientRect();
-                                                const POPUP_WIDTH = 280; // Matches SettingsWindowHelper
+                                                const POPUP_WIDTH = 270; // Matches SettingsWindowHelper actual width
                                                 const GAP = 8; // Same gap as between TopPill and main body (gap-2 = 8px)
 
                                                 // X: Left-aligned relative to the Settings Button

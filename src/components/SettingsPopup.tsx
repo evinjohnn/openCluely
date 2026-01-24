@@ -41,34 +41,9 @@ const SettingsPopup = () => {
         }
     }, [useGeminiPro]);
 
-    const contentRef = useRef<HTMLDivElement>(null);
-
-    // Auto-resize Window
-    useLayoutEffect(() => {
-        if (!contentRef.current) return;
-
-        const observer = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                const rect = entry.target.getBoundingClientRect();
-                try {
-                    // @ts-ignore
-                    window.electronAPI?.updateContentDimensions({
-                        width: Math.ceil(rect.width),
-                        height: Math.ceil(rect.height)
-                    });
-                } catch (e) {
-                    console.warn("Failed to update dimensions", e);
-                }
-            }
-        });
-
-        observer.observe(contentRef.current);
-        return () => observer.disconnect();
-    }, []);
-
     return (
-        <div ref={contentRef} className="w-fit h-fit bg-transparent p-0 flex flex-col">
-            <div className="w-[calc(100vw*0.382)] max-w-[280px] min-w-[240px] bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-hidden shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
+        <div className="w-fit h-fit bg-transparent p-0 flex flex-col">
+            <div className="w-[260px] bg-[#1E1E1E]/95 backdrop-blur-2xl border border-white/10 rounded-[16px] overflow-hidden shadow-2xl shadow-black/40 p-2 flex flex-col animate-scale-in origin-top-left justify-between">
 
                 {/* Undetectability */}
                 <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-default">
