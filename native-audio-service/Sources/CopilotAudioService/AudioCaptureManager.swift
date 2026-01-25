@@ -119,6 +119,7 @@ final class AudioCaptureManager {
         systemCapture.stop()
         
         micEngine.inputNode.removeTap(onBus: 0)
+        micEngine.reset()
         
         isCapturing = false
         Logger.log("AudioCaptureManager stopped", level: .info)

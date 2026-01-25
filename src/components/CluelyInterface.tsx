@@ -472,15 +472,7 @@ const NativelyInterface = () => {
         }));
 
 
-        cleanups.push(window.electronAPI.onIntelligenceFollowUpQuestionsUpdate((data) => {
-            setIsProcessing(false);
-            setMessages(prev => [...prev, {
-                id: Date.now().toString(),
-                role: 'system',
-                text: data.questions, // Raw questions, no prefix
-                intent: 'follow_up_questions' // Custom intent for styling
-            }]);
-        }));
+
 
         // Screenshot taken - auto-analyze
         cleanups.push(window.electronAPI.onScreenshotTaken(async (data) => {
@@ -748,7 +740,7 @@ Provide only the answer, nothing else.`;
                 }
 
                 // Call Streaming API
-                await window.electronAPI.streamGeminiChat(prompt, currentAttachment?.path);
+                await window.electronAPI.streamGeminiChat(prompt, currentAttachment?.path, undefined, { skipSystemPrompt: true });
 
             } catch (err) {
                 // Initial invocation failing (e.g. IPC error before stream starts)
@@ -777,7 +769,7 @@ Provide only the answer, nothing else.`;
             setManualTranscript('');
             isRecordingRef.current = true;  // Update ref immediately
             setIsManualRecording(true);
-            setIsExpanded(true);
+
 
             // Ensure native audio is connected
             try {
@@ -1135,8 +1127,8 @@ Provide only the answer, nothing else.`;
 
 
 
-                        {/* Chat History - Only show if there are messages */}
-                        {messages.length > 0 && (
+                        {/* Chat History - Only show if there are messages OR active states */}
+                        {(messages.length > 0 || isManualRecording || isProcessing) && (
                             <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[clamp(300px,35vh,450px)]" style={{ scrollbarWidth: 'none' }}>
                                 {messages.map((msg) => (
                                     <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up`}>

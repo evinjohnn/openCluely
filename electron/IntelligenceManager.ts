@@ -6,6 +6,10 @@ import { EventEmitter } from 'events';
 import { TranscriptSegment, SuggestionTrigger } from './NativeAudioClient';
 import { LLMHelper } from './LLMHelper';
 import { AnswerLLM, AssistLLM, FollowUpLLM, RecapLLM, FollowUpQuestionsLLM, WhatToAnswerLLM, prepareTranscriptForWhatToAnswer } from './llm';
+import * as fs from 'fs';
+import * as path from 'path';
+import { app, shell } from 'electron';
+import * as os from 'os';
 
 export const GEMINI_FLASH_MODEL = "gemini-3-flash-preview";
 export const GEMINI_PRO_MODEL = "gemini-3-pro-preview";
@@ -101,10 +105,50 @@ export class IntelligenceManager extends EventEmitter {
     private readonly triggerCooldown: number = 3000; // 3 seconds
     private currentModel: string = GEMINI_FLASH_MODEL;
 
+    // Transcript logging
+    private transcriptPath: string;
+
     constructor(llmHelper: LLMHelper) {
         super();
         this.llmHelper = llmHelper;
         this.initializeModeLLMs();
+
+        // Initialize transcript file
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        this.transcriptPath = path.join(os.tmpdir(), `natively_transcript_${timestamp}.txt`);
+        this.initializeTranscriptFile();
+    }
+
+    private initializeTranscriptFile(): void {
+        const header = `Natively Session Transcript - ${new Date().toLocaleString()}\n----------------------------------------\n\n`;
+        try {
+            fs.writeFileSync(this.transcriptPath, header, 'utf8');
+            console.log(`[IntelligenceManager] Transcript log created at: ${this.transcriptPath}`);
+        } catch (err) {
+            console.error(`[IntelligenceManager] Failed to create transcript log:`, err);
+        }
+    }
+
+    private appendToLog(role: string, text: string): void {
+        const time = new Date().toLocaleTimeString();
+        const entry = `[${time}] ${role.toUpperCase()}: ${text}\n\n`;
+        try {
+            fs.appendFileSync(this.transcriptPath, entry, 'utf8');
+        } catch (err) {
+            console.warn(`[IntelligenceManager] Failed to write to transcript log:`, err);
+        }
+    }
+
+    /**
+     * Open the transcript file in default text editor
+     */
+    public async openTranscriptFile(): Promise<void> {
+        try {
+            await shell.openPath(this.transcriptPath);
+            console.log(`[IntelligenceManager] Opened transcript file`);
+        } catch (err) {
+            console.error(`[IntelligenceManager] Failed to open transcript file:`, err);
+        }
     }
 
     /**
@@ -162,6 +206,20 @@ export class IntelligenceManager extends EventEmitter {
 
         this.evictOldEntries();
         this.lastTranscriptTime = Date.now();
+
+        // Log to file
+        // Map role to user request: "microphone input as user and system audio tagged as interviewer"
+        // 'user' -> 'USER'
+        // 'interviewer' -> 'INTERVIEWER'
+
+        // Filter out internal system prompts that might be passed via IPC
+        const isInternalPrompt = text.startsWith("You are a real-time interview assistant") ||
+            text.startsWith("You are a helper") ||
+            text.startsWith("CONTEXT:");
+
+        if (!isInternalPrompt) {
+            this.appendToLog(role === 'user' ? 'USER' : 'INTERVIEWER', text);
+        }
 
         // Check for follow-up intent if user is speaking
         if (!skipRefinementCheck && role === 'user' && this.lastAssistantMessage) {

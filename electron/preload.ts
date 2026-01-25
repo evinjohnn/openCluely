@@ -80,7 +80,7 @@ interface ElectronAPI {
   onToggleExpand: (callback: () => void) => () => void
 
   // Streaming listeners
-  streamGeminiChat: (message: string, imagePath?: string, context?: string) => Promise<void>
+  streamGeminiChat: (message: string, imagePath?: string, context?: string, options?: { skipSystemPrompt?: boolean }) => Promise<void>
   onGeminiStreamToken: (callback: (token: string) => void) => () => void
   onGeminiStreamDone: (callback: () => void) => () => void
   onGeminiStreamError: (callback: (error: string) => void) => () => void
@@ -418,7 +418,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
 
   // Streaming Chat
-  streamGeminiChat: (message: string, imagePath?: string, context?: string) => ipcRenderer.invoke("gemini-chat-stream", message, imagePath, context),
+  streamGeminiChat: (message: string, imagePath?: string, context?: string, options?: { skipSystemPrompt?: boolean }) => ipcRenderer.invoke("gemini-chat-stream", message, imagePath, context, options),
 
   onGeminiStreamToken: (callback: (token: string) => void) => {
     const subscription = (_: any, token: string) => callback(token)

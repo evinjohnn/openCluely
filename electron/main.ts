@@ -556,6 +556,13 @@ async function initializeApp() {
     }
   })
 
+  app.on('will-quit', async (e) => {
+    // Open the transcript file before quitting
+    // Note: This is fire-and-forget since will-quit doesn't support async wait well without preventDefault
+    // But openPath is usually fast enough or hands off to OS
+    AppState.getInstance().getIntelligenceManager().openTranscriptFile();
+  });
+
   app.dock?.hide() // Hide dock icon (optional)
   app.commandLine.appendSwitch("disable-background-timer-throttling")
 }

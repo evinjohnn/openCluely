@@ -77,7 +77,7 @@ export interface ElectronAPI {
   onIntelligenceError: (callback: (data: { error: string; mode: string }) => void) => () => void
 
   // Streaming listeners
-  streamGeminiChat: (message: string, imagePath?: string, context?: string) => Promise<void>
+  streamGeminiChat: (message: string, imagePath?: string, context?: string, options?: { skipSystemPrompt?: boolean }) => Promise<void>
   onGeminiStreamToken: (callback: (token: string) => void) => () => void
   onGeminiStreamDone: (callback: () => void) => () => void
   onGeminiStreamError: (callback: (error: string) => void) => () => void

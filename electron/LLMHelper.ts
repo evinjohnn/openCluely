@@ -456,14 +456,16 @@ ANSWER DIRECTLY:`;
     }
   }
 
-  public async chatWithGemini(message: string, imagePath?: string, context?: string): Promise<string> {
+  public async chatWithGemini(message: string, imagePath?: string, context?: string, skipSystemPrompt: boolean = false): Promise<string> {
     try {
       console.log(`[LLMHelper] chatWithGemini called with message:`, message.substring(0, 50))
 
       // Build context-aware prompt
-      let fullMessage = `${HARD_SYSTEM_PROMPT}\n\n${message}`;
+      let fullMessage = skipSystemPrompt ? message : `${HARD_SYSTEM_PROMPT}\n\n${message}`;
       if (context) {
-        fullMessage = `${HARD_SYSTEM_PROMPT}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`;
+        fullMessage = skipSystemPrompt
+          ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
+          : `${HARD_SYSTEM_PROMPT}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`;
       }
 
       // Try with current model first
@@ -572,13 +574,16 @@ ANSWER DIRECTLY:`;
    * Stream chat response from Gemini
    * Yields chunks of text as they arrive
    */
-  public async *streamChatWithGemini(message: string, imagePath?: string, context?: string): AsyncGenerator<string, void, unknown> {
+  public async *streamChatWithGemini(message: string, imagePath?: string, context?: string, skipSystemPrompt: boolean = false): AsyncGenerator<string, void, unknown> {
     console.log(`[LLMHelper] streamChatWithGemini called with message:`, message.substring(0, 50));
 
     // Build context-aware prompt
-    let fullMessage = `${HARD_SYSTEM_PROMPT}\n\n${message}`;
+    // Build context-aware prompt
+    let fullMessage = skipSystemPrompt ? message : `${HARD_SYSTEM_PROMPT}\n\n${message}`;
     if (context) {
-      fullMessage = `${HARD_SYSTEM_PROMPT}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`;
+      fullMessage = skipSystemPrompt
+        ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
+        : `${HARD_SYSTEM_PROMPT}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`;
     }
 
     if (this.useOllama) {
@@ -633,8 +638,8 @@ ANSWER DIRECTLY:`;
 
       try {
         // Attempt 1: FAST (Flash) with Timeout
-        // Dynamic Timeout: 10s for text, 15s for multimodal (images need more processing time)
-        const timeoutMs = imagePath ? 15000 : 10000;
+        // Dynamic Timeout: 15s for text, 20s for multimodal (images need more processing time)
+        const timeoutMs = imagePath ? 20000 : 15000;
 
         console.log(`[LLMHelper] Attempting Flash stream (${this.geminiModel}) with ${timeoutMs}ms timeout...`);
         streamResult = await Promise.race([
