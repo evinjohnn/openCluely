@@ -177,10 +177,11 @@ final class AudioCaptureManager {
         }
         
         // If input has multiple channels, force use of the first one to avoid silence if others are empty
+        // If input has multiple channels, let AVAudioConverter downmix them to mono by default.
+        // Previously we forced [0], which causes silence if the user is on Channel 1 (e.g. 2nd input of an interface).
         if inputFormat.channelCount > 1 {
-            // Map input channel 0 to output channel 0
-            converter.channelMap = [0] 
-            Logger.log("Applied channel map: [0] (Input has \(inputFormat.channelCount) channels)", level: .info)
+            // converter.channelMap = [0] // REMOVED to allow downmixing
+            Logger.log("Input has \(inputFormat.channelCount) channels - letting converter downmix to mono", level: .info) 
         }
         
         // Calculate buffer size for ~100ms chunks at input sample rate
