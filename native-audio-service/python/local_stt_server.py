@@ -98,9 +98,18 @@ class STTServer:
                         
                         # Trigger processing if enough data
                         # We trigger based on buffer size, but processing happens via independent loop or explicit trigger
-                        # For simplicity, let's trigger whenever we have enough new data, 
-                        # but ideally we rely on the background transcription loop.
-                        # Actually, let's just push and let a loop handle it to avoid blocking the socket.
+                        
+                        # ISSUE 1 Fix: Rolling Buffer Cap (30s max)
+                        max_bytes = int(BUFFER_DURATION_SEC * SAMPLE_RATE * 2)
+                        if len(self.buffers[speaker]) > max_bytes:
+                            # Trim oldest data
+                            excess = len(self.buffers[speaker]) - max_bytes
+                            del self.buffers[speaker][:excess]
+                            
+                            # Adjust slow_loop cursor so it doesn't point to invalid index
+                            # If cursor was at 1000, and we deleted 100, cursor should be 900.
+                            # If cursor was at 50, and we deleted 100, cursor should be 0 (all processed data gone).
+                            self.slow_offsets[speaker] = max(0, self.slow_offsets[speaker] - excess)
 
                 except json.JSONDecodeError:
                     logger.error("Failed to decode JSON message")
@@ -113,11 +122,12 @@ class STTServer:
             pass
 
     async def fast_loop(self, speaker, websocket):
-        """Pass 1: Fast, low-latency, greedy decoding, creates draft text using TINY model on TAIL audio."""
+        """Pass 1: Fast, low-latency, greedy decoding, creates draft text using SMALL model on TAIL audio."""
         logger.info(f"Starting FAST loop for {speaker}")
         while True:
             try:
-                await asyncio.sleep(0.15) 
+                # OPTIMIZATION: Relaxed to 0.2s for CPU health
+                await asyncio.sleep(0.2) 
                 
                 # Peek buffer
                 async with self.locks[speaker]:
@@ -195,6 +205,9 @@ class STTServer:
                 # Check if we actually have enough new data to warrant a decode
                 if len(data_to_process) < bytes_needed:
                     continue
+
+                # HARD BUG FIX: Define audio_array for slow loop
+                audio_array = np.frombuffer(data_to_process, dtype=np.int16).astype(np.float32) / 32768.0
 
                 loop = asyncio.get_event_loop()
                 def transcribe_slow():
