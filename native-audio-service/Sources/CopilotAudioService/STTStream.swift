@@ -1,6 +1,6 @@
 import Foundation
 import NIO
-import GRPC
+// import GRPC // Removed Google GRPC dependency
 
 /// Represents a piece of transcription
 struct TranscriptSegment: Codable, CustomStringConvertible {
@@ -33,12 +33,6 @@ protocol STTStreamProtocol: AnyObject {
 
 // AudioSource is defined in AudioCaptureManager.swift
 
-/// Provider selection (Deprecated, only Google gRPC supported)
-enum STTProvider: String {
-    case google
-    case deepgram // Retained for config compatibility but unused
-}
-
 /// Manages multiple STT streams (mic + system)
 final class STTManager {
     
@@ -48,18 +42,13 @@ final class STTManager {
         }
     }
     
-    private let tokenProvider: ServiceAccountTokenProvider?
-    private let projectId: String
     private var streams: [AudioSource: STTStreamProtocol] = [:]
     
     private let eventLoopGroup: EventLoopGroup
     
-    init(tokenProvider: ServiceAccountTokenProvider?, projectId: String) {
-        self.tokenProvider = tokenProvider
-        self.projectId = projectId
+    init() {
         // Use PlatformSupport to get the native OS event loop (NIOTS on macOS)
-        // This ensures SSL certificates work correctly without manual configuration.
-        self.eventLoopGroup = PlatformSupport.makeEventLoopGroup(loopCount: 2)
+        self.eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 2)
     }
     
     deinit {
@@ -67,17 +56,10 @@ final class STTManager {
     }
     
     func startStream(for source: AudioSource) {
-        guard let provider = tokenProvider else {
-            Logger.log("STTManager: No token provider available for \(source.rawValue)", level: .error)
-            return
-        }
+        Logger.log("STTManager: Starting Local STT stream for \(source.rawValue)", level: .info)
         
-        Logger.log("STTManager: Starting gRPC stream for \(source.rawValue)", level: .info)
-        
-        let stream = GoogleGRPCStream(
+        let stream = LocalSTTClient(
             source: source,
-            tokenProvider: provider,
-            projectId: projectId,
             eventLoopGroup: eventLoopGroup
         )
         stream.delegate = delegate
@@ -89,7 +71,7 @@ final class STTManager {
         if let stream = streams[source] {
             stream.sendAudio(data)
         } else {
-            Logger.log("STTManager: No stream for \(source.rawValue)! Available: \(streams.keys.map { $0.rawValue })", level: .warning)
+            // Logger.log("STTManager: No stream for \(source.rawValue)! Available: \(streams.keys.map { $0.rawValue })", level: .warning)
         }
     }
     

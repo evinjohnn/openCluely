@@ -46,16 +46,11 @@ struct Main {
         Logger.log("  STT Endpoint: \(config.sttEndpoint.prefix(50))...", level: .info)
         Logger.log("  Context Window: \(config.contextWindowDuration)s", level: .info)
         
-        // Validate Google credentials for gRPC
-        let googleCreds = ProcessInfo.processInfo.environment["GOOGLE_APPLICATION_CREDENTIALS"] ?? ""
-        guard !googleCreds.isEmpty else {
-            Logger.log("ERROR: Google credentials not configured", level: .error)
-            Logger.log("Set GOOGLE_APPLICATION_CREDENTIALS environment variable to your service account JSON", level: .error)
-            Logger.log("Example: export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json", level: .error)
-            exit(1)
-        }
+        // Validate Google credentials for gRPC - REMOVED for Local STT
+        // let googleCreds = ProcessInfo.processInfo.environment["GOOGLE_APPLICATION_CREDENTIALS"] ?? ""
+        // guard !googleCreds.isEmpty else { ... }
         
-        Logger.log("  Google Credentials: \(googleCreds)", level: .info)
+        Logger.log("  STT Mode: Local (Python WebSocket)", level: .info)
         
         // Create and start service
         let service = CopilotAudioService(config: config)

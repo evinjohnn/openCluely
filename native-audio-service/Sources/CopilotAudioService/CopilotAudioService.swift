@@ -173,24 +173,8 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     
     private func initializeComponents() {
         do {
-            // Initialize Auth
-            var effectiveProjectId = config.googleProjectId
-            if let credentialsPath = ProcessInfo.processInfo.environment["GOOGLE_APPLICATION_CREDENTIALS"] {
-                tokenProvider = try ServiceAccountTokenProvider(credentialsPath: credentialsPath)
-                Logger.log("Service Account Auth initialized", level: .info)
-                
-                // Use project ID from service account if not explicitly configured
-                if effectiveProjectId.isEmpty {
-                    effectiveProjectId = tokenProvider!.projectId
-                    Logger.log("Using project ID from service account: \(effectiveProjectId)", level: .info)
-                }
-            } else {
-                Logger.log("Warning: GOOGLE_APPLICATION_CREDENTIALS not set. gRPC STT will fail.", level: .warning)
-            }
-            
-            // Initialize STT Manager with Auth
-            // (Note: STTManager now exclusively uses GoogleGRPCStream)
-            sttManager = STTManager(tokenProvider: tokenProvider, projectId: effectiveProjectId)
+            // Initialize STT Manager (No Auth required for local)
+            sttManager = STTManager()
             sttManager?.delegate = self
             
             // Initialize IPC
@@ -206,7 +190,6 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
             Logger.log("Starting audio capture immediately (buffering enabled)...", level: .info)
             
             // Initialize Audio Capture immediately
-            // GoogleGRPCStream now buffers audio internally until gRPC handshake completes
             do {
                 audioCapture = AudioCaptureManager(virtualDeviceUID: config.virtualDeviceUID)
                 audioCapture?.delegate = self
@@ -287,8 +270,8 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     }
     
     func sttStreamDidConnect(_ stream: STTStreamProtocol) {
-        if let grpcStream = stream as? GoogleGRPCStream {
-            if grpcStream.source == .microphone {
+        if let localStream = stream as? LocalSTTClient {
+            if localStream.source == .microphone {
                 micSTTConnected = true
             } else {
                 systemSTTConnected = true
@@ -299,8 +282,8 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     
     func sttStreamDidDisconnect(_ stream: STTStreamProtocol) {
         // Auto-reconnect on disconnect (handles timeouts during silence)
-        if let grpcStream = stream as? GoogleGRPCStream {
-            let source = grpcStream.source
+        if let localStream = stream as? LocalSTTClient {
+            let source = localStream.source
             Logger.log("STT stream disconnected for \(source.rawValue), attempting reconnect...", level: .warning)
             
             if source == .microphone {

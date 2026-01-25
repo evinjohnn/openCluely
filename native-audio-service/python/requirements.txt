@@ -1,0 +1,5 @@
+faster-whisper
+numpy
+websockets
+torch
+ctranslate2
