@@ -638,8 +638,9 @@ ANSWER DIRECTLY:`;
 
       try {
         // Attempt 1: FAST (Flash) with Timeout
-        // Dynamic Timeout: 15s for text, 20s for multimodal (images need more processing time)
-        const timeoutMs = imagePath ? 20000 : 15000;
+        // Dynamic Timeout: 8s for text (aggressive failover), 10s for multimodal
+        // We want to failover to Pro QUICKLY if Flash is hanging.
+        const timeoutMs = imagePath ? 10000 : 8000;
 
         console.log(`[LLMHelper] Attempting Flash stream (${this.geminiModel}) with ${timeoutMs}ms timeout...`);
         streamResult = await Promise.race([
@@ -660,6 +661,7 @@ ANSWER DIRECTLY:`;
         try {
           streamResult = await startStream(GEMINI_PRO_MODEL);
           console.log(`[LLMHelper] Backup stream (Pro) started successfully.`);
+          // Warn the user via the first token so they know why it was slow? No, seamless is better.
         } catch (backupErr: any) {
           // If Pro also fails, throw original or new error
           console.error(`[LLMHelper] Backup stream also failed:`, backupErr);
@@ -670,7 +672,16 @@ ANSWER DIRECTLY:`;
       // @ts-ignore - SDK typing might be slightly off or version dependent, handle both cases
       const stream = streamResult.stream || streamResult;
 
+      const streamStartTime = Date.now();
+      let isFirstChunk = true;
+
       for await (const chunk of stream) {
+        if (isFirstChunk) {
+          const ttfb = Date.now() - streamStartTime;
+          console.log(`[LLMHelper] Stream TTFB: ${ttfb}ms`);
+          isFirstChunk = false;
+        }
+
         let chunkText = "";
 
         try {

@@ -22,6 +22,9 @@ final class HALSystemAudioCapture {
     
     // Target format: 16kHz Mono Int16
     fileprivate let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+    
+    // Captured format (device native)
+    fileprivate var capturedFormat: AVAudioFormat?
 
     func start(virtualDeviceUID: String) throws {
         try setupDevice(uid: virtualDeviceUID)
@@ -143,7 +146,17 @@ final class HALSystemAudioCapture {
              throw CaptureError.streamFormatFailed
         }
         
-        Logger.log("HAL Device Native Format: \(deviceFormat.mSampleRate)Hz, \(deviceFormat.mChannelsPerFrame)ch", level: .info)
+
+        
+        if let avFormat = AVAudioFormat(streamDescription: &deviceFormat) {
+            self.capturedFormat = avFormat
+            Logger.log("HAL Device Native Format: \(deviceFormat.mSampleRate)Hz, \(deviceFormat.mChannelsPerFrame)ch (AVFormat: \(avFormat))", level: .info)
+        } else {
+             Logger.log("Failed to create AVAudioFormat from device format", level: .error)
+             throw CaptureError.streamFormatFailed
+        }
+        
+        // Set the AU Output (Scope Output, Element 1) to match the Input (Device Native)
         
         // Set the AU Output (Scope Output, Element 1) to match the Input (Device Native)
         // This ensures the AU just passes data through without trying to resampling itself (which often fails)
@@ -214,18 +227,32 @@ private func renderCallback(
         .fromOpaque(inRefCon)
         .takeUnretainedValue()
 
-    guard let audioUnit = capture.audioUnit else {
+    guard let audioUnit = capture.audioUnit,
+          let format = capture.capturedFormat else {
         return kAudioUnitErr_Uninitialized
     }
-
-    var bufferList = AudioBufferList(
-        mNumberBuffers: 1,
-        mBuffers: AudioBuffer(
-            mNumberChannels: 1,
-            mDataByteSize: inNumberFrames * 2,
-            mData: nil
-        )
-    )
+    
+    // Create a buffer compatible with the device format
+    // This handles multi-channel / non-interleaved logic automatically
+    guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: inNumberFrames) else {
+        return kAudioUnitErr_FormatNotSupported
+    }
+    
+    // AudioUnitRender wants an AudioBufferList. AVAudioPCMBuffer provides a mutable pointer to one.
+    // However, we need to populate the mDataByteSize correctly before calling render?
+    // AVAudioPCMBuffer usually sets this up based on frameCapacity.
+    // BUT AudioUnitRender writes TO the mData pointers.
+    // Note: AVAudioPCMBuffer allocates the memory. We just pass the pointers.
+    
+    // We need to set .mDataByteSize safely? 
+    // Usually AudioUnitRender overwrites it or respects it.
+    // Let's rely on the buffer's configured list.
+    
+    let bufferListPtr = UnsafeMutableAudioBufferListPointer(inputBuffer.mutableAudioBufferList)
+    
+    for i in bufferListPtr.indices {
+        bufferListPtr[i].mDataByteSize = inNumberFrames * format.streamDescription.pointee.mBytesPerFrame
+    }
 
     let status = AudioUnitRender(
         audioUnit,
@@ -233,48 +260,26 @@ private func renderCallback(
         inTimeStamp,
         1,
         inNumberFrames,
-        &bufferList
+        inputBuffer.mutableAudioBufferList
     )
 
-    guard status == noErr,
-          let data = bufferList.mBuffers.mData else {
+    guard status == noErr else {
         return status
     }
     
-    // Create AVAudioPCMBuffer from raw AU data
-    // We captured at device native format
-    guard let converter = capture.converter else { return noErr }
+    // Verify we actually got something
+    let capturedBytes = Int(inputBuffer.frameLength) * Int(format.streamDescription.pointee.mBytesPerFrame)
+    // Logger.log("HAL Captured: \(inputBuffer.frameLength) frames, \(capturedBytes) bytes", level: .debug)
     
-    // We assume Float32 Non-Interleaved (standard CoreAudio)
-    // Construct buffer wrapper
-    // Note: bufferList is C-struct, we need to wrap it safely
+    // Safety check for silence/zeroes?
+    // if let data = inputBuffer.floatChannelData?[0] {
+    //      // Check RMS? Too expensive for now.
+    // }
     
-    // Careful: input frames could vary
-    // We need to construct an AVAudioPCMBuffer to hold this data for conversion
-    
-    // Since we can't easily wrap raw pointers into AVAudioPCMBuffer without copying or unsafe tricks,
-    // and AVAudioConverter needs AVAudioPCMBuffer or AudioBufferList.
-    
-    // Luckily AVAudioConverterInputBlock takes (packetCount, outStatus).
-    // But we need to feed it THIS buffer.
-    
-    // Let's use the AudioBufferList directly with converter.convert(to:from:)?
-    // No, convert(to:from:) takes AVAudioPCMBuffer.
-    
-    // Alternative: Use AudioConverterFillComplexBuffer (C-API)?
-    // Or construct AVAudioPCMBuffer efficiently.
-    
-    // Let's assume inputFormat was correctly inferred. 
-    // We can cast the raw pointer to the expected type and copy into a fresh AVAudioPCMBuffer.
-    
-    // BETTER: Configure local AudioBufferList to match what we have and pass it to a converter block.
-    
+    // Create conversion output
     // Calculate output size needed (16k vs Native)
-    // ratio = 16000 / NativeRate
-    let ratio = 16000.0 / capture.targetFormat.sampleRate // Wait, target IS 16000
-    // Actually ratio = 16000 / InputRate
-    // Just estimate generous output buffer
-    let outputFrameCapacity = AVAudioFrameCount(Double(inNumberFrames) * 2.0) // safe margin
+    let ratio = 16000.0 / format.sampleRate
+    let outputFrameCapacity = AVAudioFrameCount(Double(inNumberFrames) * ratio * 2.0) + 100 // safe margin
     
     guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: capture.targetFormat, frameCapacity: outputFrameCapacity) else {
         return noErr
@@ -282,20 +287,24 @@ private func renderCallback(
     
     var error: NSError?
     
-    // We make a mutable copy of the buffer list header to pass to the block
-    var inputBufferList = bufferList
+    guard let converter = capture.converter else { return noErr }
     
-    withUnsafePointer(to: inputBufferList) { inputBufferListPtr in
-        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
-            outStatus.pointee = .haveData
-            // We only have one buffer to give
-            return AVAudioPCMBuffer(pcmFormat: converter.inputFormat, frameCapacity: inNumberFrames, bufferListNoCopy: inputBufferListPtr)
+    // Conversion Input Block
+    var inputBufferUsed = false
+    let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+        if inputBufferUsed {
+            outStatus.pointee = .noDataNow
+            return nil
         }
-        
-        converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+        inputBufferUsed = true
+        outStatus.pointee = .haveData
+        return inputBuffer
     }
     
+    converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+    
     if let err = error {
+        // Suppress "No Data" errors if just end of stream
         Logger.log("HAL Convert Error: \(err)", level: .error)
         return noErr
     }
@@ -303,29 +312,12 @@ private func renderCallback(
     if outputBuffer.frameLength > 0, let int16Data = outputBuffer.int16ChannelData {
          let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
          let pcmData = Data(bytes: int16Data[0], count: byteCount)
+         
+         // Logger.log("HAL Converted: \(outputBuffer.frameLength) frames, \(byteCount) bytes", level: .debug)
          capture.onAudioData?(pcmData)
+    } else {
+         Logger.log("HAL Conversion yielded 0 frames", level: .warning)
     }
 
     return noErr
-}
-
-// Helper extension to create buffer from existing list
-extension AVAudioPCMBuffer {
-    convenience init?(pcmFormat: AVAudioFormat, frameCapacity: AVAudioFrameCount, bufferListNoCopy: UnsafePointer<AudioBufferList>) {
-        self.init(pcmFormat: pcmFormat, frameCapacity: frameCapacity)
-        // This constructor allocates its own memory. We want to wrap.
-        // Swift's AVFoundation overlay doesn't expose the "NoCopy/Deallocator" initializer easily.
-        // Fallback: Copy data.
-        
-        let byteSize = Int(bufferListNoCopy.pointee.mBuffers.mDataByteSize)
-        if let src = bufferListNoCopy.pointee.mBuffers.mData,
-           let dst = self.audioBufferList.pointee.mBuffers.mData {
-            memcpy(dst, src, byteSize)
-            self.frameLength = frameCapacity // Assume full? No.
-            // We need correct frame length.
-            // But we don't know it here easily without calcs.
-            // WAIT: The inputBlock in convert expects us to return a buffer containing the data.
-            // If we copy, it works.
-        }
-    }
 }

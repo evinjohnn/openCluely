@@ -43,7 +43,11 @@ struct Main {
         Logger.log("Configuration:", level: .info)
         Logger.log("  IPC Port: \(config.ipcPort)", level: .info)
         Logger.log("  Virtual Device: \(config.virtualDeviceUID)", level: .info)
-        Logger.log("  STT Endpoint: \(config.sttEndpoint.prefix(50))...", level: .info)
+        if !config.sttEndpoint.isEmpty {
+            Logger.log("  STT Endpoint: \(config.sttEndpoint.prefix(50))...", level: .info)
+        } else {
+             Logger.log("  STT Provider: \(config.sttProvider) (gRPC)", level: .info)
+        }
         Logger.log("  Context Window: \(config.contextWindowDuration)s", level: .info)
         
         // Validate Google credentials for gRPC

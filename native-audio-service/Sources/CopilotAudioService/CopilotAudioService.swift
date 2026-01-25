@@ -17,7 +17,7 @@ struct ServiceConfig: Codable {
     
     /// STT WebSocket endpoint (for Deepgram or custom)
     /// For Google, we use gRPC so this is not used
-    var sttEndpoint: String = "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&interim_results=true"
+    var sttEndpoint: String = ""
     
     /// Google Cloud project ID (for Google STT)
     var googleProjectId: String = ""
