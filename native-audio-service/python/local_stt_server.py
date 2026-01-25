@@ -17,27 +17,36 @@ logging.basicConfig(
 logger = logging.getLogger("LocalSTTServer")
 
 # Configuration
-MODEL_SIZE = "large-v3"
-DEVICE = "cpu" # Reverted to CPU as Metal is not supported by this version of ctranslate2
 COMPUTE_TYPE = "int8"
 SAMPLE_RATE = 16000
 CHANNELS = 1
-VAD_FILTER = False
+# VAD_FILTER is now contextual per loop
 
 # Rolling buffer configuration
 BUFFER_DURATION_SEC = 30 # Maintain a rolling buffer to provide context if needed, though we process in chunks
 SLIDING_WINDOW_SEC = 0.4 # Fast pass window
+FAST_LOOKBACK_SEC = 0.5 # Max audio to process in fast pass (tail)
 SLOW_WINDOW_SEC = 2.0  # Slow pass window
 OVERLAP_SEC = 0.2
 
 class STTServer:
     def __init__(self):
-        logger.info(f"Loading model {MODEL_SIZE} on {DEVICE} with {COMPUTE_TYPE} quantization...")
+        # Load Fast Model (Tiny.en) - Low latency, draft quality
+        logger.info("Loading FAST model (tiny.en) on cpu...")
         try:
-            self.model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
-            logger.info("Model loaded successfully.")
+            self.fast_model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+            logger.info("Fast model loaded.")
         except Exception as e:
-            logger.error(f"Failed to load model: {e}")
+            logger.error(f"Failed to load fast model: {e}")
+            raise
+
+        # Load Final Model (Large-v3) - High accuracy, final quality
+        logger.info("Loading FINAL model (large-v3) on cpu...")
+        try:
+            self.final_model = WhisperModel("large-v3", device="cpu", compute_type="int8")
+            logger.info("Final model loaded.")
+        except Exception as e:
+            logger.error(f"Failed to load final model: {e}")
             raise
 
         # Per-speaker state
@@ -99,7 +108,7 @@ class STTServer:
             pass
 
     async def fast_loop(self, speaker, websocket):
-        """Pass 1: Fast, low-latency, greedy decoding, creates draft text."""
+        """Pass 1: Fast, low-latency, greedy decoding, creates draft text using TINY model on TAIL audio."""
         logger.info(f"Starting FAST loop for {speaker}")
         while True:
             try:
@@ -107,27 +116,22 @@ class STTServer:
                 
                 # Peek buffer
                 async with self.locks[speaker]:
-                    # Helper copy
-                    buffer_copy = self.buffers[speaker][:]
-                
-                # Check if we have enough data (at least SLIDING_WINDOW_SEC)
-                bytes_needed = int(SLIDING_WINDOW_SEC * SAMPLE_RATE * 2) 
-                if len(buffer_copy) < bytes_needed:
-                    continue
-
-                # For Fast Pass, we don't clear the buffer, just transcribe the tail or full
-                # In this continuous stream model, we just transcribe what we have.
-                # To be super fast, we might limit input size if buffer gets huge, 
-                # but Slow Loop manages buffer size.
+                    # We only care about the last FAST_LOOKBACK_SEC
+                    tail_bytes = int(FAST_LOOKBACK_SEC * SAMPLE_RATE * 2)
+                    if len(self.buffers[speaker]) < int(SLIDING_WINDOW_SEC * SAMPLE_RATE * 2):
+                        continue
+                        
+                    # Take only the tail. We don't want history re-encoding for drafts.
+                    buffer_tail = self.buffers[speaker][-tail_bytes:]
                 
                 # Convert to numpy
-                audio_array = np.frombuffer(buffer_copy, dtype=np.int16).astype(np.float32) / 32768.0
+                audio_array = np.frombuffer(buffer_tail, dtype=np.int16).astype(np.float32) / 32768.0
                 
                 # Non-blocking inference on thread pool
                 loop = asyncio.get_event_loop()
                 def transcribe_fast():
-                    # Greedy, no VAD, beam=1
-                    segments_gen, info = self.model.transcribe(
+                    # Greedy, no VAD, beam=1, using FAST MODEL
+                    segments_gen, info = self.fast_model.transcribe(
                         audio_array, 
                         beam_size=1, 
                         temperature=0.0,
@@ -155,7 +159,7 @@ class STTServer:
                 await asyncio.sleep(1)
 
     async def slow_loop(self, speaker, websocket):
-        """Pass 2: Slower, high accuracy, manages buffer, creates final text."""
+        """Pass 2: Slower, high accuracy, manages buffer, creates final text using LARGE model."""
         logger.info(f"Starting SLOW loop for {speaker}")
         while True:
             try:
@@ -168,18 +172,16 @@ class STTServer:
                     if len(self.buffers[speaker]) < bytes_needed:
                         continue
                         
-                    # Capture data to process
+                    # Capture FULL data to process (Contextual)
                     data_to_process = self.buffers[speaker][:]
-                    # We DO NOT clear buffer here yet. We wait until transcription is done
-                    # to safely remove the processed part while keeping new data.
                 
                 # Convert
                 audio_array = np.frombuffer(data_to_process, dtype=np.int16).astype(np.float32) / 32768.0
 
                 loop = asyncio.get_event_loop()
                 def transcribe_slow():
-                    # Accurate, VAD=True, beam=5
-                    segments_gen, info = self.model.transcribe(
+                    # Accurate, VAD=True, beam=5, using FINAL MODEL
+                    segments_gen, info = self.final_model.transcribe(
                         audio_array, 
                         beam_size=5, 
                         vad_filter=True, # Enable VAD for Final
