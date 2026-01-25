@@ -149,3 +149,7 @@ native-audio-service/Sources/CopilotAudioService/Protos/
 
 # OS
 .DS_Store
+
+# Python venv
+venv/
+native-audio-service/python/venv/

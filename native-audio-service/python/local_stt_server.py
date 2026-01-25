@@ -21,11 +21,12 @@ DEVICE = "cpu" # Reverted to CPU as Metal is not supported by this version of ct
 COMPUTE_TYPE = "int8"
 SAMPLE_RATE = 16000
 CHANNELS = 1
-VAD_FILTER = True
+VAD_FILTER = False
 
 # Rolling buffer configuration
 BUFFER_DURATION_SEC = 30 # Maintain a rolling buffer to provide context if needed, though we process in chunks
-SLIDING_WINDOW_SEC = 2.0 # Process roughly every 2 seconds of new audio
+SLIDING_WINDOW_SEC = 0.4 # Process roughly every 0.4 seconds of new audio
+OVERLAP_SEC = 0.2
 
 class STTServer:
     def __init__(self):
@@ -96,7 +97,7 @@ class STTServer:
         logger.info(f"Starting transcription loop for {speaker}")
         while True:
             try:
-                await asyncio.sleep(0.5) # Check every 500ms
+                await asyncio.sleep(0.15) # Check every 150ms
                 
                 # Check buffer
                 async with self.locks[speaker]:
@@ -108,25 +109,17 @@ class STTServer:
                 if buffer_len < bytes_needed:
                     continue
                     
-                # Extract audio to process (process all available for now, clear buffer? 
-                # No, standard streaming STT usually keeps some overlap or processes chunks.
-                # For "real-time" w/o re-initialization, we usually feed chunks to the model.
-                # faster-whisper is mainly file/segment based.
-                # Simplest approach for "streaming-like":
-                # Take all accumulated audio, transcribe it, clear it? 
-                # Better: Transcribe, if final, emit.
-                # Let's take the current buffer, convert to float32 numpy, transcribe.
+                # Extract audio to process with overlap
+                overlap_bytes = int(OVERLAP_SEC * SAMPLE_RATE * 2)
                 
                 async with self.locks[speaker]:
-                    # Determine how much to read. 
-                    # If we read everything, we might cut a word in half.
-                    # Ideally we leave some overlap or rely on VAD chunks.
-                    # For this implementation: Read all, transcribe.
-                    # If the model result is not final (unlikely with faster-whisper default), handling is complex.
-                    # However, faster-whisper works on segments.
-                    
                     data_to_process = self.buffers[speaker][:]
-                    self.buffers[speaker] = bytearray() # Clear buffer for next chunk
+                    # Retain overlap for continuity
+                    if len(data_to_process) > overlap_bytes:
+                        self.buffers[speaker] = self.buffers[speaker][-overlap_bytes:]
+                    else:
+                        # Should not happen due to check above, but safely keep what we have if barely enough
+                        pass 
                     
                 if not data_to_process:
                     continue
@@ -140,7 +133,9 @@ class STTServer:
                 def transcribe_wrapper():
                     segments_gen, info = self.model.transcribe(
                         audio_array, 
-                        beam_size=5, 
+                        beam_size=1, 
+                        temperature=0.0,
+                        condition_on_previous_text=False,
                         vad_filter=VAD_FILTER,
                         language="en"
                     )
