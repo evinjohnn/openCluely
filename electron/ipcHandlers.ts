@@ -316,7 +316,7 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   // Native Audio Service Handlers
   ipcMain.handle("native-audio-connect", async () => {
-    appState.connectNativeAudio();
+    await appState.connectNativeAudio();
     return { success: true };
   });
 

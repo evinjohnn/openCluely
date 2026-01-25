@@ -633,8 +633,8 @@ ANSWER DIRECTLY:`;
 
       try {
         // Attempt 1: FAST (Flash) with Timeout
-        // Dynamic Timeout: 7s for text, 15s for multimodal (images need more processing time)
-        const timeoutMs = imagePath ? 15000 : 7000;
+        // Dynamic Timeout: 10s for text, 15s for multimodal (images need more processing time)
+        const timeoutMs = imagePath ? 15000 : 10000;
 
         console.log(`[LLMHelper] Attempting Flash stream (${this.geminiModel}) with ${timeoutMs}ms timeout...`);
         streamResult = await Promise.race([

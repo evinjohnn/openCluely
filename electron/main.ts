@@ -272,8 +272,8 @@ export class AppState {
     })
   }
 
-  public connectNativeAudio(): void {
-    this.nativeAudioClient.connect()
+  public async connectNativeAudio(): Promise<boolean> {
+    return this.nativeAudioClient.connect()
   }
 
   public disconnectNativeAudio(): void {
@@ -537,8 +537,9 @@ async function initializeApp() {
     appState.settingsWindowHelper.preloadWindow()
 
     // Connect to native audio service
-    appState.connectNativeAudio()
-    console.log("Native audio client connecting...")
+    appState.connectNativeAudio().then(() => {
+      console.log("Native audio client connected/connecting...")
+    });
   })
 
   app.on("activate", () => {

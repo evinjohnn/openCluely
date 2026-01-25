@@ -58,49 +58,55 @@ export class NativeAudioClient extends EventEmitter {
     /**
      * Connect to the native audio service
      */
-    connect(): void {
-        if (this.ws || this.isConnecting) {
-            return;
-        }
+    connect(): Promise<boolean> {
+        return new Promise((resolve) => {
+            if (this.ws || this.isConnecting) {
+                resolve(this.isConnected());
+                return;
+            }
 
-        this.isConnecting = true;
-        this.shouldReconnect = true;
+            this.isConnecting = true;
+            this.shouldReconnect = true;
 
-        try {
-            this.ws = new WebSocket(this.url);
+            try {
+                this.ws = new WebSocket(this.url);
 
-            this.ws.on('open', () => {
+                this.ws.on('open', () => {
+                    this.isConnecting = false;
+                    // console.log('[NativeAudioClient] Connected to native audio service');
+                    this.emit('connected');
+                    resolve(true);
+                });
+
+                this.ws.on('close', () => {
+                    this.isConnecting = false;
+                    this.ws = null;
+                    // console.log('[NativeAudioClient] Disconnected from native audio service');
+                    this.emit('disconnected');
+
+                    if (this.shouldReconnect) {
+                        this.scheduleReconnect();
+                    }
+                });
+
+                this.ws.on('error', (error: Error) => {
+                    this.isConnecting = false;
+                    // console.error('[NativeAudioClient] WebSocket error:', error.message);
+                    this.emit('error', error);
+                    resolve(false);
+                });
+
+                this.ws.on('message', (data: WebSocket.Data) => {
+                    this.handleMessage(data.toString());
+                });
+            } catch (error) {
                 this.isConnecting = false;
-                // console.log('[NativeAudioClient] Connected to native audio service');
-                this.emit('connected');
-            });
-
-            this.ws.on('close', () => {
-                this.isConnecting = false;
-                this.ws = null;
-                // console.log('[NativeAudioClient] Disconnected from native audio service');
-                this.emit('disconnected');
-
-                if (this.shouldReconnect) {
-                    this.scheduleReconnect();
-                }
-            });
-
-            this.ws.on('error', (error: Error) => {
-                this.isConnecting = false;
-                // console.error('[NativeAudioClient] WebSocket error:', error.message);
+                // console.error('[NativeAudioClient] Failed to create WebSocket:', error);
                 this.emit('error', error);
-            });
-
-            this.ws.on('message', (data: WebSocket.Data) => {
-                this.handleMessage(data.toString());
-            });
-        } catch (error) {
-            this.isConnecting = false;
-            // console.error('[NativeAudioClient] Failed to create WebSocket:', error);
-            this.emit('error', error);
-            this.scheduleReconnect();
-        }
+                this.scheduleReconnect();
+                resolve(false);
+            }
+        });
     }
 
     /**

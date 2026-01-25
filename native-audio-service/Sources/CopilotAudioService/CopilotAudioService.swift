@@ -266,6 +266,9 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     // MARK: - STTStreamDelegate
     
     func sttStream(_ stream: STTStreamProtocol, didReceive transcript: TranscriptSegment) {
+        // Track speaker state for turn detection
+        turnDetector.updateSpeakerState(speaker: transcript.speaker)
+        
         // Add transcript to context
         if transcript.isFinal {
             contextManager.addTranscript(transcript)

@@ -136,6 +136,8 @@
   },
   "dependencies": {
     "@google/genai": "^0.12.0",
+    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/proto-loader": "^0.8.0",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-toast": "^1.2.2",
     "axios": "^1.7.7",
@@ -159,6 +161,7 @@
     "sharp": "^0.33.5",
     "tailwind-merge": "^2.5.4",
     "tesseract.js": "^5.0.5",
-    "uuid": "^11.0.3"
+    "uuid": "^11.0.3",
+    "ws": "^8.19.0"
   }
 }

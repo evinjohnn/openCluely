@@ -32,10 +32,9 @@ final class AudioCaptureManager {
     weak var delegate: AudioCaptureDelegate?
     
     private let micEngine = AVAudioEngine()
-    private let systemEngine = AVAudioEngine()
+    private let systemCapture = HALSystemAudioCapture()
     
     private var micConverter: AVAudioConverter?
-    private var systemConverter: AVAudioConverter?
     
     private let processingQueue = DispatchQueue(label: "com.copilot.audio.processing", qos: .userInteractive)
     
@@ -90,12 +89,12 @@ final class AudioCaptureManager {
             Logger.log("Microphone capture failed: \(error)", level: .error)
         }
         
-        // Try to start system audio (may fail if BlackHole not installed)
+        // Try to start system audio (via HAL)
         do {
-            try configureSystemAudioPipeline()
-            try systemEngine.start()
+            configureSystemAudioPipeline()
+            try systemCapture.start(virtualDeviceUID: virtualDeviceUID)
             systemStarted = true
-            Logger.log("System audio capture started", level: .info)
+            Logger.log("System audio capture started (HAL)", level: .info)
         } catch {
             Logger.log("System audio capture failed: \(error)", level: .warning)
             Logger.log("Install BlackHole for system audio: brew install blackhole-2ch", level: .info)
@@ -117,10 +116,9 @@ final class AudioCaptureManager {
         guard isCapturing else { return }
         
         micEngine.stop()
-        systemEngine.stop()
+        systemCapture.stop()
         
         micEngine.inputNode.removeTap(onBus: 0)
-        systemEngine.inputNode.removeTap(onBus: 0)
         
         isCapturing = false
         Logger.log("AudioCaptureManager stopped", level: .info)
@@ -131,7 +129,7 @@ final class AudioCaptureManager {
         defer { stateLock.unlock() }
         
         micEngine.pause()
-        systemEngine.pause()
+        systemCapture.stop() // HAL doesn't have pause, so we stop
         Logger.log("AudioCaptureManager paused", level: .info)
     }
     
@@ -140,7 +138,7 @@ final class AudioCaptureManager {
         defer { stateLock.unlock() }
         
         try micEngine.start()
-        try systemEngine.start()
+        try systemCapture.start(virtualDeviceUID: virtualDeviceUID)
         Logger.log("AudioCaptureManager resumed", level: .info)
     }
     
@@ -154,14 +152,14 @@ final class AudioCaptureManager {
             Logger.log("Microphone Permission Status: \(status.rawValue) (0=notDetermined, 1=restricted, 2=denied, 3=authorized)", level: .info)
         }
 
-        // Enable echo cancellation (Voice Processing I/O)
-        // This prevents the mic from picking up the interviewer's voice from speakers
+        // Disable echo cancellation (Voice Processing I/O)
+        // We want raw mic input; echo cancellation often suppresses speech
         if #available(macOS 11.0, *) {
             do {
-                try inputNode.setVoiceProcessingEnabled(true)
-                Logger.log("Voice processing (echo cancellation) enabled", level: .info)
+                try inputNode.setVoiceProcessingEnabled(false)
+                Logger.log("Voice processing (echo cancellation) disabled", level: .info)
             } catch {
-                Logger.log("Failed to enable voice processing: \(error)", level: .warning)
+                Logger.log("Failed to disable voice processing: \(error)", level: .warning)
             }
         }
         
@@ -193,77 +191,13 @@ final class AudioCaptureManager {
         }
     }
     
-    private func configureSystemAudioPipeline() throws {
-        // Find and set the virtual audio device as input
-        try setInputDevice(uid: virtualDeviceUID, for: systemEngine)
-        
-        let inputNode = systemEngine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        
-        guard inputFormat.sampleRate > 0 else {
-            throw AudioCaptureError.invalidInputFormat
+    private func configureSystemAudioPipeline() {
+        systemCapture.onAudioData = { [weak self] data in
+            guard let self = self else { return }
+            self.processingQueue.async {
+                self.delegate?.audioCaptureManager(self, didCapture: data, from: .systemAudio)
+            }
         }
-        
-        systemConverter = AVAudioConverter(from: inputFormat, to: targetFormat)
-        guard let converter = systemConverter else {
-            throw AudioCaptureError.converterCreationFailed
-        }
-        
-        let inputBufferSize = AVAudioFrameCount(inputFormat.sampleRate * AudioConstants.chunkDurationMs / 1000.0)
-        
-        inputNode.installTap(onBus: 0, bufferSize: inputBufferSize, format: inputFormat) { [weak self] buffer, time in
-            self?.processAudioBuffer(buffer, converter: converter, source: .systemAudio)
-        }
-    }
-    
-    private func setInputDevice(uid: String, for engine: AVAudioEngine) throws {
-        var deviceID: AudioDeviceID = 0
-        var propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
-        
-        // Get device ID from UID
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyTranslateUIDToDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        
-        var uidCF = uid as CFString
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            UInt32(MemoryLayout<CFString>.size),
-            &uidCF,
-            &propertySize,
-            &deviceID
-        )
-        
-        guard status == noErr, deviceID != 0 else {
-            throw AudioCaptureError.deviceNotFound(uid: uid)
-        }
-        
-        // Set as input device for the engine's audio unit
-        let audioUnit = engine.inputNode.audioUnit!
-        var enableIO: UInt32 = 1
-        
-        // Enable input
-        AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_EnableIO,
-            kAudioUnitScope_Input,
-            1,
-            &enableIO,
-            UInt32(MemoryLayout<UInt32>.size)
-        )
-        
-        // Set device
-        AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &deviceID,
-            UInt32(MemoryLayout<AudioDeviceID>.size)
-        )
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, converter: AVAudioConverter, source: AudioSource) {
@@ -368,12 +302,12 @@ final class AudioCaptureManager {
         
         // Check which engine triggered the change
         let triggeredByMic = notification.object as? AVAudioEngine === micEngine
-        let triggeredBySystem = notification.object as? AVAudioEngine === systemEngine
+        // let triggeredBySystem = notification.object as? AVAudioEngine === systemEngine // Removed
         
-        guard triggeredByMic || triggeredBySystem else { return }
+        guard triggeredByMic else { return }
         
-        Logger.log("Audio configuration changed (mic: \(triggeredByMic), system: \(triggeredBySystem))", level: .warning)
-        Logger.log("Engine states - Mic: \(micEngine.isRunning), System: \(systemEngine.isRunning)", level: .warning)
+        Logger.log("Audio configuration changed (mic: \(triggeredByMic))", level: .warning)
+        Logger.log("Engine states - Mic: \(micEngine.isRunning)", level: .warning)
         
         // Debounce restarts to prevent loops using a simple work item cancellation approach
         // (Note: Simple delay is sufficient here as we just want to back off slightly)
