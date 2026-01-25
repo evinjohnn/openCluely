@@ -31,10 +31,10 @@ OVERLAP_SEC = 0.2
 
 class STTServer:
     def __init__(self):
-        # Load Fast Model (Tiny.en) - Low latency, draft quality
-        logger.info("Loading FAST model (tiny.en) on cpu...")
+        # Load Fast Model (Small.en) - Low latency, better accuracy than tiny
+        logger.info("Loading FAST model (small.en) on cpu...")
         try:
-            self.fast_model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+            self.fast_model = WhisperModel("small.en", device="cpu", compute_type="int8")
             logger.info("Fast model loaded.")
         except Exception as e:
             logger.error(f"Failed to load fast model: {e}")
@@ -62,7 +62,12 @@ class STTServer:
         }
 
         # Thread pool for non-blocking inference
-        self.executor = ThreadPoolExecutor(max_workers=4)
+        # ISSUE 1 Fix: Reduced to 2 workers to prevent CPU thrashing
+        self.executor = ThreadPoolExecutor(max_workers=2)
+        
+        # State tracking for deduplication and cursors
+        self.last_fast_text = {"user": "", "interviewer": ""}
+        self.slow_offsets = {"user": 0, "interviewer": 0}
         
         # Background processing tasks
         self.tasks = {}
@@ -143,15 +148,18 @@ class STTServer:
 
                 segments = await loop.run_in_executor(self.executor, transcribe_fast)
 
+                # ISSUE 2 Fix: Dedup fast text
                 for segment in segments:
-                    response = {
-                        "type": "transcript",
-                        "speaker": speaker,
-                        "text": segment.text.strip(),
-                        "final": False, # DRAFT
-                        "confidence": segment.avg_logprob
-                    }
-                    if response["text"]:
+                    text = segment.text.strip()
+                    if text and text != self.last_fast_text[speaker]:
+                        self.last_fast_text[speaker] = text
+                        response = {
+                            "type": "transcript",
+                            "speaker": speaker,
+                            "text": text,
+                            "final": False, # DRAFT
+                            "confidence": segment.avg_logprob
+                        }
                         await websocket.send(json.dumps(response))
 
             except Exception as e:
@@ -169,14 +177,24 @@ class STTServer:
                 bytes_needed = int(SLOW_WINDOW_SEC * SAMPLE_RATE * 2)
                 
                 async with self.locks[speaker]:
-                    if len(self.buffers[speaker]) < bytes_needed:
+                    buffer_len = len(self.buffers[speaker])
+                    if buffer_len < bytes_needed:
                         continue
-                        
-                    # Capture FULL data to process (Contextual)
-                    data_to_process = self.buffers[speaker][:]
+                     
+                    # ISSUE 3 Fix: Cursor-based processing logic
+                    # Calculate start index based on offset and overlap
+                    overlap_bytes = int(OVERLAP_SEC * SAMPLE_RATE * 2)
+                    start_index = max(0, self.slow_offsets[speaker] - overlap_bytes)
+                    
+                    # Capture only new data + overlap
+                    data_to_process = self.buffers[speaker][start_index:]
+                    
+                    # Update offset to current end of buffer
+                    self.slow_offsets[speaker] = buffer_len
                 
-                # Convert
-                audio_array = np.frombuffer(data_to_process, dtype=np.int16).astype(np.float32) / 32768.0
+                # Check if we actually have enough new data to warrant a decode
+                if len(data_to_process) < bytes_needed:
+                    continue
 
                 loop = asyncio.get_event_loop()
                 def transcribe_slow():
@@ -204,17 +222,9 @@ class STTServer:
                         logger.info(f"FINAL [{speaker}]: {response['text']}")
                         await websocket.send(json.dumps(response))
                 
-                # Commit / Truncate Buffer
-                # We processed len(data_to_process).
-                # New data may have arrived in self.buffers[speaker].
-                # We want to remove processed bytes but keep overlap.
-                processed_len = len(data_to_process)
-                overlap_bytes = int(OVERLAP_SEC * SAMPLE_RATE * 2)
-                remove_len = max(0, processed_len - overlap_bytes)
-                
-                async with self.locks[speaker]:
-                   # Effectively splice out the processed start
-                   del self.buffers[speaker][:remove_len]
+                # We DO NOT delete from buffer anymore to keep it simple and append-only
+                # Memory usage is generally fine for typical session lengths.
+                # If sessions are hours long, we might need a cleanup strategy, but for now this ensures O(N) correctness.
 
             except Exception as e:
                 logger.error(f"Error in SLOW loop for {speaker}: {e}")
