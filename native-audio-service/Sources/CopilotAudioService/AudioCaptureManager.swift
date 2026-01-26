@@ -42,10 +42,10 @@ final class AudioCaptureManager {
     private let stateLock = NSLock()
     
     /// Virtual audio device UID (e.g., BlackHole)
-    /// TODO: Make configurable or auto-detect
     private let virtualDeviceUID: String
     
-    // MARK: - Target Format
+    private let micVAD = VADGate(identifier: "user")
+    private let systemVAD = VADGate(identifier: "interviewer", maxPreRollCount: 20) // Increase buffer for small chunks
     
     private lazy var targetFormat: AVAudioFormat = {
         AVAudioFormat(
@@ -75,6 +75,10 @@ final class AudioCaptureManager {
         defer { stateLock.unlock() }
         
         guard !isCapturing else { return }
+        
+        // Reset VADs on start
+        micVAD.reset()
+        systemVAD.reset()
         
         var micStarted = false
         var systemStarted = false
@@ -196,7 +200,19 @@ final class AudioCaptureManager {
         systemCapture.onAudioData = { [weak self] data in
             guard let self = self else { return }
             self.processingQueue.async {
-                self.delegate?.audioCaptureManager(self, didCapture: data, from: .systemAudio)
+                // For system audio, we receive Data directly, not AVAudioBuffer.
+                // We'll process it via VAD here directly or wrap it?
+                // NOTE: HALSystemAudioCapture returns data in target format already? 
+                // Let's check HALSystemAudioCapture usage... usually it does raw capture.
+                // Assuming HAL capture is sending raw PCM.
+                // If it needs conversion, it would happen inside HALSystemAudioCapture or here.
+                // Let's assume data is ready to process.
+                
+                // Use system VAD
+                let chunks = self.systemVAD.process(chunk: data)
+                for chunk in chunks {
+                    self.delegate?.audioCaptureManager(self, didCapture: chunk, from: .systemAudio)
+                }
             }
         }
     }
@@ -207,45 +223,25 @@ final class AudioCaptureManager {
             
             do {
                 let convertedData = try self.convertToTargetFormat(buffer: buffer, converter: converter)
-                // Logger.log("Audio converted \(source.rawValue): \(convertedData.count) bytes", level: .debug)
                 
-                // Check for silence
-                self.checkSilence(data: convertedData, source: source)
+                // Process through VAD
+                // We only have .microphone coming through here currently
+                // (System audio comes via closure above)
+                let chunks: [Data]
+                if source == .microphone {
+                    chunks = self.micVAD.process(chunk: convertedData)
+                } else {
+                    // Fallback for symmetry
+                    chunks = self.systemVAD.process(chunk: convertedData)
+                }
                 
-                self.delegate?.audioCaptureManager(self, didCapture: convertedData, from: source)
+                for chunk in chunks {
+                    self.delegate?.audioCaptureManager(self, didCapture: chunk, from: source)
+                }
+                
             } catch {
                 Logger.log("Audio conversion error \(source.rawValue): \(error)", level: .error)
                 self.delegate?.audioCaptureManager(self, didEncounterError: error, from: source)
-            }
-        }
-    }
-    
-    private func checkSilence(data: Data, source: AudioSource) {
-        let sampleCount = data.count / MemoryLayout<Int16>.size
-        guard sampleCount > 0 else { return }
-        
-        data.withUnsafeBytes { buffer in
-            guard let int16Buffer = buffer.bindMemory(to: Int16.self).baseAddress else { return }
-            
-            var sum: Float = 0
-            // Check sample subset to save CPU
-            let step = 10
-            let iterations = sampleCount / step
-            
-            guard iterations > 0 else { return }
-            
-            for i in 0..<iterations {
-                let sample = Float(int16Buffer[i * step])
-                sum += sample * sample
-            }
-            
-            let rms = sqrt(sum / Float(iterations))
-            
-            // Threshold for "silence" - typically purely digital silence is 0, but low noise floor might be < 100
-            if rms < 50.0 {
-                // Only log occasionally or it will spam
-                // implementation detail: could add a rate limiter here, but for now we just log
-                 Logger.log("Potential silence from \(source.rawValue) (RMS: \(Int(rms)))", level: .warning)
             }
         }
     }

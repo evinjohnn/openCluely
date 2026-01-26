@@ -4,6 +4,9 @@ import Dispatch
 /// Entry point for the Copilot Audio Service
 struct Main {
     static func main() {
+        // Load .env file first
+        loadEnv()
+        
         // Parse command line arguments
         let arguments = CommandLine.arguments
         
@@ -72,6 +75,53 @@ struct Main {
         
         // Keep the process running
         dispatchMain()
+    }
+    
+    static func loadEnv() {
+        let fileManager = FileManager.default
+        // Check current directory and parent directory for .env
+        let possiblePaths = [".env", "../.env"]
+        
+        for relativePath in possiblePaths {
+            let currentPath = fileManager.currentDirectoryPath
+            let envPath = URL(fileURLWithPath: currentPath).appendingPathComponent(relativePath).path
+            
+            if fileManager.fileExists(atPath: envPath) {
+                // We'll log to stdout since Logger might not be fully configured yet (though it defaults to info)
+                // But let's use a simple print for this startup phase just in case
+                print("[INFO] Loading environment from \(envPath)")
+                
+                do {
+                    let contents = try String(contentsOfFile: envPath)
+                    let lines = contents.components(separatedBy: .newlines)
+                    
+                    for line in lines {
+                        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // Skip comments and empty lines
+                        if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+                        
+                        // Simple parser for KEY=VALUE
+                        let parts = trimmed.split(separator: "=", maxSplits: 1).map { String($0) }
+                        if parts.count == 2 {
+                            let key = parts[0].trimmingCharacters(in: .whitespaces)
+                            var value = parts[1].trimmingCharacters(in: .whitespaces)
+                            
+                            // Remove quotes if present
+                            if (value.hasPrefix("\"") && value.hasSuffix("\"")) || 
+                               (value.hasPrefix("'") && value.hasSuffix("'")) {
+                                value = String(value.dropFirst().dropLast())
+                            }
+                            
+                            // Set environment variable (overwrite if exists, to ensure .env takes precedence if loaded)
+                            // However, standard modifying process environment in Swift is done via setenv
+                            setenv(key, value, 1)
+                        }
+                    }
+                } catch {
+                    print("[WARNING] Failed to load .env: \(error)")
+                }
+            }
+        }
     }
     
     static func printUsage() {
