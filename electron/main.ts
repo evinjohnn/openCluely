@@ -42,6 +42,8 @@ import { ShortcutsHelper } from "./shortcuts"
 import { ProcessingHelper } from "./ProcessingHelper"
 import { NativeAudioClient, TranscriptSegment, SuggestionTrigger, ServiceStatus } from "./NativeAudioClient"
 import { IntelligenceManager } from "./IntelligenceManager"
+import { SystemAudioCapture } from "./audio/SystemAudioCapture"
+import { GoogleSTT } from "./audio/GoogleSTT"
 
 export class AppState {
   private static instance: AppState | null = null
@@ -107,6 +109,73 @@ export class AppState {
     this.intelligenceManager = new IntelligenceManager(this.processingHelper.getLLMHelper())
     this.setupNativeAudioEvents()
     this.setupIntelligenceEvents()
+
+    // --- NEW SYSTEM AUDIO PIPELINE (SOX + NODE GOOGLE STT) ---
+    this.setupSystemAudioPipeline()
+  }
+
+  // New Property for System Audio
+  private systemAudioCapture: SystemAudioCapture | null = null;
+  private googleSTT: GoogleSTT | null = null;
+
+  private setupSystemAudioPipeline(): void {
+    try {
+      const { SystemAudioCapture } = require('./audio/SystemAudioCapture');
+      const { GoogleSTT } = require('./audio/GoogleSTT');
+
+      this.systemAudioCapture = new SystemAudioCapture();
+      this.googleSTT = new GoogleSTT();
+
+      // Wire Capture -> STT
+      this.systemAudioCapture?.on('data', (chunk: Buffer) => {
+        this.googleSTT?.write(chunk);
+      });
+
+      this.systemAudioCapture?.on('audio_active', () => {
+        // Optional: Update UI to show "System Audio Active"
+      });
+
+      this.systemAudioCapture?.on('error', (err: Error) => {
+        console.error('[Main] SystemAudioCapture Error:', err);
+      });
+
+      // Wire STT -> IntelligenceManager
+      this.googleSTT?.on('transcript', (segment: { text: string, isFinal: boolean, confidence: number }) => {
+        // Inject as INTERVIEWER (system audio)
+        this.intelligenceManager.handleTranscript({
+          speaker: 'interviewer',
+          text: segment.text,
+          timestamp: Date.now(),
+          final: segment.isFinal,
+          confidence: segment.confidence
+        });
+
+        // Forward to Renderer for UI
+        const mainWindow = this.getMainWindow();
+        if (mainWindow) {
+          mainWindow.webContents.send('native-audio-transcript', {
+            speaker: 'interviewer',
+            text: segment.text,
+            timestamp: Date.now(),
+            final: segment.isFinal,
+            confidence: segment.confidence
+          });
+        }
+      });
+
+      this.googleSTT?.on('error', (err: Error) => {
+        console.error('[Main] GoogleSTT Error:', err);
+      });
+
+      // Start the pipeline
+      this.googleSTT?.start();
+      this.systemAudioCapture?.start();
+
+      console.log('[Main] System Audio Pipeline (SoX + GoogleNode) Initialized');
+
+    } catch (err) {
+      console.error('[Main] Failed to setup System Audio Pipeline:', err);
+    }
   }
 
   private setupIntelligenceEvents(): void {

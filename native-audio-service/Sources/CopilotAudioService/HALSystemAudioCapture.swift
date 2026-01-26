@@ -412,91 +412,107 @@ private func renderCallback(
 
     guard let audioUnit = capture.audioUnit,
           let format = capture.capturedFormat else {
-        Logger.log("HAL: AudioUnit is nil in callback!", level: .error)
         return kAudioUnitErr_Uninitialized
     }
     
-    // Log first few callbacks to verify we're being called
-    // (Note: This static var is local to the function scope in Swift)
+    // Log throttling
     struct Static { static var callbackCount = 0 }
     Static.callbackCount += 1
-    
     let shouldLog = Static.callbackCount <= 10 || Static.callbackCount % 100 == 0
     
     if shouldLog {
-        Logger.log("HAL: Callback #\(Static.callbackCount), frames=\(inNumberFrames), bus=\(inBusNumber)", level: .info)
-    }
-    
-    // Create a buffer compatible with the device format
-    // This handles multi-channel / non-interleaved logic automatically
-    guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: inNumberFrames) else {
-        return kAudioUnitErr_FormatNotSupported
-    }
-    
-    // AudioUnitRender wants an AudioBufferList. AVAudioPCMBuffer provides a mutable pointer to one.
-    // However, we need to populate the mDataByteSize correctly before calling render?
-    // AVAudioPCMBuffer usually sets this up based on frameCapacity.
-    // BUT AudioUnitRender writes TO the mData pointers.
-    // Note: AVAudioPCMBuffer allocates the memory. We just pass the pointers.
-    
-    // We need to set .mDataByteSize safely? 
-    // Usually AudioUnitRender overwrites it or respects it.
-    // Let's rely on the buffer's configured list.
-    
-    let bufferListPtr = UnsafeMutableAudioBufferListPointer(inputBuffer.mutableAudioBufferList)
-    
-    for i in bufferListPtr.indices {
-        bufferListPtr[i].mDataByteSize = inNumberFrames * format.streamDescription.pointee.mBytesPerFrame
+         Logger.log("HAL: Callback #\(Static.callbackCount), frames=\(inNumberFrames), bus=\(inBusNumber)", level: .info)
     }
 
+    // Manual Buffer Allocation to avoid AVAudioPCMBuffer quirks (Fix for error -50)
+    let channelCount = format.channelCount // e.g. 2
+    let isInterleaved = format.isInterleaved // e.g. true for BlackHole
+    let bytesPerFrame = format.streamDescription.pointee.mBytesPerFrame // e.g. 8 for 2ch float32 interleaved
+    let bufferSizeBytes = Int(inNumberFrames) * Int(bytesPerFrame)
+    
+    // We need an AudioBufferList.
+    // Since we are inside a sensitive callback, we prefer stack or pre-allocated. 
+    // But swift makes stack ABL hard. We will use a singular malloc for the data.
+    
+    // Allocate data buffer (this is fast enough usually, or pre-allocate in real-time apps)
+    // For safety and correctness, we alloc here.
+    let dataPtr = UnsafeMutableRawPointer.allocate(byteCount: bufferSizeBytes, alignment: 16)
+    defer { dataPtr.deallocate() }
+    
+    // Construct AudioBufferList manually
+    var bufferList = AudioBufferList()
+    bufferList.mNumberBuffers = 1 // Assuming interleaved for now as logs confirmed it. 
+    // If Deinterleaved, we need loop. 
+    // Logs said: "Float32, interleaved". So 1 buffer.
+    
+    bufferList.mBuffers.mNumberChannels = channelCount
+    bufferList.mBuffers.mDataByteSize = UInt32(bufferSizeBytes)
+    bufferList.mBuffers.mData = dataPtr
+    
+    // Call Render
+    // We must pass the pointer to the struct
     let status = AudioUnitRender(
         audioUnit,
         ioActionFlags,
         inTimeStamp,
-        1,
+        1, // Input Element
         inNumberFrames,
-        inputBuffer.mutableAudioBufferList
+        &bufferList
     )
-
+    
     guard status == noErr else {
+        Logger.log("HAL: AudioUnitRender FAILED with status: \(status)", level: .error)
         return status
     }
-    // Fix: Explicitly set frameLength after render so converter knows there is data
+    
+    // Success! Now we have data in dataPtr.
+    // We need to convert it using AVAudioConverter.
+    
+    // Wrap data in a buffer for the converter
+    guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: inNumberFrames) else {
+        return kAudioUnitErr_FormatNotSupported
+    }
     inputBuffer.frameLength = inNumberFrames
     
-    // Verify we actually got something
-    let capturedBytes = Int(inputBuffer.frameLength) * Int(format.streamDescription.pointee.mBytesPerFrame)
+    // Copy data to AVAudioPCMBuffer
+    if let dest = inputBuffer.floatChannelData?[0] {
+        // floatChannelData is UnsafeMutablePointer<Float>
+        // dataPtr is void.
+        // Assuming Float32 interleaved -> directly copy bytes
+        let destRaw = UnsafeMutableRawPointer(dest)
+        destRaw.copyMemory(from: dataPtr, byteCount: bufferSizeBytes)
+    } else {
+        return kAudioUnitErr_FormatNotSupported
+    }
     
-    // DIAGNOSTIC: RMS Silence Check (Sample first buffer)
-    if shouldLog, let floatData = inputBuffer.floatChannelData?[0] {
+    // Proceed with conversion (existing logic)
+    
+    // 1. Diagnostics
+    if shouldLog {
+        let floats = dataPtr.assumingMemoryBound(to: Float.self)
         var maxSample: Float = 0.0
-        // Check first 100 samples
-        let checkCount = min(100, Int(inNumberFrames))
+        let checkCount = min(100, Int(inNumberFrames) * Int(channelCount))
         for i in 0..<checkCount {
-            maxSample = max(maxSample, abs(floatData[i]))
+            maxSample = max(maxSample, abs(floats[i]))
         }
-        
-        // Logger.log("HAL: Max sample amplitude: \(maxSample)", level: .debug)
-        
         if maxSample < 0.0001 {
-             Logger.log("HAL: ⚠️  AUDIO IS SILENT! BlackHole may not be receiving system audio. (Callback #\(Static.callbackCount))", level: .warning)
+             Logger.log("HAL: ⚠️  Captured Silence (RMS < 0.0001)", level: .warning)
+        } else {
+             Logger.log("HAL: ✅ Audio Signal Present (Max: \(maxSample))", level: .info)
         }
     }
     
-    // Create conversion output
-    // Calculate output size needed (16k vs Native)
+    // 2. Output Buffer
     let ratio = 16000.0 / format.sampleRate
-    let outputFrameCapacity = AVAudioFrameCount(Double(inNumberFrames) * ratio * 2.0) + 100 // safe margin
+    let outputFrameCapacity = AVAudioFrameCount(Double(inNumberFrames) * ratio * 2.0) + 100
     
     guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: capture.targetFormat, frameCapacity: outputFrameCapacity) else {
         return noErr
     }
     
     var error: NSError?
-    
     guard let converter = capture.converter else { return noErr }
     
-    // Conversion Input Block
     var inputBufferUsed = false
     let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
         if inputBufferUsed {
@@ -510,21 +526,26 @@ private func renderCallback(
     
     converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
     
-    if let err = error {
-        // Suppress "No Data" errors if just end of stream
-        Logger.log("HAL Convert Error: \(err)", level: .error)
-        return noErr
+    if let error = error {
+         Logger.log("HAL Convert Error: \(error)", level: .error)
+         return noErr
     }
     
+    // 3. Forward Data
     if outputBuffer.frameLength > 0, let int16Data = outputBuffer.int16ChannelData {
          let byteCount = Int(outputBuffer.frameLength) * MemoryLayout<Int16>.size
          let pcmData = Data(bytes: int16Data[0], count: byteCount)
          
-         Logger.log("HAL Converted: \(outputBuffer.frameLength) frames, \(byteCount) bytes", level: .debug)
+         // capture.onAudioData?(pcmData)
+         // Duplicate call removed, just use the one below
+         
          capture.onAudioData?(pcmData)
-    } else {
-         Logger.log("HAL Conversion yielded 0 frames", level: .warning)
+         
+         // Success log - commented out to prevent spam (200Hz)
+         // if shouldLog {
+         //    Logger.log("HAL -> Delegate: Sent \(byteCount) bytes", level: .info)
+         // }
     }
-
+    
     return noErr
 }

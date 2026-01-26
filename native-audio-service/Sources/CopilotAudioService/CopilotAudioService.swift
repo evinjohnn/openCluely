@@ -258,7 +258,8 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     func audioCaptureManager(_ manager: AudioCaptureManager, didCapture chunk: Data, from source: AudioSource) {
         // Trace log for system audio to verify data flow
         if source == .systemAudio {
-            Logger.log("Delegate CAPTURED system audio: \(chunk.count) bytes", level: .debug)
+            // Reverted to debug level to prevent spam
+            Logger.log("CopilotAudioService: Received system audio chunk (\(chunk.count) bytes)", level: .debug)
         }
         // Forward to STT
         sttManager?.sendAudio(chunk, to: source)
