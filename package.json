@@ -141,6 +141,7 @@
     "@grpc/proto-loader": "^0.8.0",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-toast": "^1.2.2",
+    "@types/three": "^0.182.0",
     "axios": "^1.7.7",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
@@ -163,6 +164,7 @@
     "sharp": "^0.33.5",
     "tailwind-merge": "^2.5.4",
     "tesseract.js": "^5.0.5",
+    "three": "^0.182.0",
     "uuid": "^11.0.3",
     "ws": "^8.19.0"
   }

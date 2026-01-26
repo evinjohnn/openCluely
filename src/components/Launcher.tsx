@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ToggleLeft, ToggleRight, Search, Zap, Calendar, ArrowRight, ArrowLeft, MoreHorizontal, Globe, Clock, ChevronRight, Settings, RefreshCw, Eye, Ghost } from 'lucide-react';
 import icon from "./icon.png";
+import mainui from "../UI_comp/mainui.png";
+import calender from "../UI_comp/calender.png";
 
 interface Meeting {
     id: string;
@@ -83,7 +85,7 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                         {/* 1.5. Hero Header (Title + Controls + CTA) */}
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                                <h1 className="text-3xl font-celeb font-medium text-slate-200 tracking-wide drop-shadow-sm">My Cluely</h1>
+                                <h1 className="text-3xl font-celeb font-medium text-slate-200 tracking-wide drop-shadow-sm">My Natively</h1>
 
                                 {/* Refresh Button */}
                                 <button className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-full transition-colors">
@@ -91,7 +93,7 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                 </button>
 
                                 {/* Detectable Toggle Pill */}
-                                <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-full px-3 py-1.5 min-w-[140px]">
+                                <div className="flex items-center gap-3 bg-[#1A1A1A] border border-white/10 rounded-full px-3 py-1.5 min-w-[140px]">
                                     {isDetectable ? (
                                         <Ghost
                                             size={14}
@@ -127,18 +129,18 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                 </div>
                             </div>
 
-                            {/* Start Cluely CTA Pill */}
+                            {/* Start Natively CTA Pill */}
                             <button
                                 onClick={onStartMeeting}
                                 className="
                                     group relative overflow-hidden
-                                    bg-gradient-to-b from-sky-300/80 via-blue-500/80 to-blue-600/90
-                                    text-white/95
+                                    bg-gradient-to-b from-sky-400 via-sky-500 to-blue-600
+                                    text-white
                                     pl-5 pr-6 py-2.5
                                     rounded-full
                                     font-celeb font-medium tracking-normal
-                                    shadow-[inset_0_1px_1px_rgba(255,255,255,0.7),inset_0_-1px_2px_rgba(0,0,0,0.1),0_2px_10px_rgba(14,165,233,0.3),0_0_0_1px_rgba(255,255,255,0.15)]
-                                    hover:shadow-[inset_0_1px_2px_rgba(255,255,255,0.8),inset_0_-1px_3px_rgba(0,0,0,0.15),0_6px_16px_rgba(14,165,233,0.5),0_0_0_1px_rgba(255,255,255,0.25)]
+                                    shadow-[inset_0_1px_1px_rgba(255,255,255,0.7),inset_0_-1px_2px_rgba(0,0,0,0.1),0_2px_10px_rgba(14,165,233,0.4),0_0_0_1px_rgba(255,255,255,0.15)]
+                                    hover:shadow-[inset_0_1px_2px_rgba(255,255,255,0.8),inset_0_-1px_3px_rgba(0,0,0,0.15),0_6px_16px_rgba(14,165,233,0.6),0_0_0_1px_rgba(255,255,255,0.25)]
                                     hover:brightness-110
                                     hover:scale-[1.01]
                                     active:scale-[0.99]
@@ -154,22 +156,28 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                 <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
 
                                 <img src={icon} alt="Logo" className="w-[18px] h-[18px] object-contain brightness-0 invert drop-shadow-[0_1px_2px_rgba(0,0,0,0.1)] opacity-90" />
-                                <span className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.1)] -translate-y-[0.5px]">Start Cluely</span>
+                                <span className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.1)] -translate-y-[0.5px] text-[18px]">Start Natively</span>
                             </button>
                         </div>
 
                         {/* 2. Hero Section */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[220px]">
                             {/* Left Main Card */}
-                            <div className="md:col-span-2 relative group rounded-[24px] overflow-hidden border border-white/10 bg-gradient-to-br from-[#0A2647] via-[#0f172a] to-[#050505]">
-                                {/* Background Accent */}
-                                <div className="absolute inset-0 bg-blue-600/10 opacity-50 group-hover:opacity-100 transition-opacity duration-500" />
-                                <div className="absolute top-0 right-0 w-2/3 h-full bg-gradient-to-l from-blue-500/20 to-transparent skew-x-12 translate-x-12" />
+                            <div className="md:col-span-2 relative group rounded-[24px] overflow-hidden border border-white/10 bg-[#050505]">
+                                {/* Backdrop Image */}
+                                <div className="absolute inset-0">
+                                    <img src={mainui} alt="" className="w-full h-full object-cover opacity-100 transition-opacity duration-500" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+                                </div>
 
+                                {/* Background Accent (Optional additional tint) */}
+                                <div className="absolute inset-0 bg-blue-600/5 mix-blend-overlay opacity-50" />
+
+                                {/* Content */}
                                 <div className="absolute inset-0 p-8 flex flex-col justify-between z-10">
                                     <div className="max-w-md">
-                                        <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Start Cluely and get notes.</h2>
-                                        <p className="text-sm text-slate-300 leading-relaxed opacity-90">Cluely takes notes without a meeting bot, provides real-time AI assistance, and automatically generates notes and follow-up emails.</p>
+                                        <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Start Natively and get notes.</h2>
+                                        <p className="text-sm text-slate-300 leading-relaxed opacity-90">Natively takes notes without a meeting bot, provides real-time AI assistance, and automatically generates notes and follow-up emails.</p>
                                     </div>
 
                                     <button onClick={onStartMeeting} className="w-fit bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-sm text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 group-hover:pl-6 group-hover:pr-4">
@@ -180,23 +188,28 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                             </div>
 
                             {/* Right Secondary Card */}
-                            <div className="md:col-span-1 rounded-[24px] overflow-hidden border border-white/10 bg-[#151515] relative group p-6 flex flex-col justify-between">
-                                <div>
-                                    <h3 className="text-lg font-semibold text-white mb-1">Link your calendar to</h3>
-                                    <p className="text-lg font-semibold text-slate-400">see upcoming events</p>
+                            <div className="md:col-span-1 rounded-[24px] overflow-hidden border border-white/10 bg-[#151515] relative group flex flex-col items-center pt-10 text-center">
+                                {/* Backdrop Image */}
+                                <div className="absolute inset-0">
+                                    <img src={calender} alt="" className="w-full h-full object-cover opacity-100 transition-opacity duration-500" />
                                 </div>
 
-                                <button className="w-full bg-[#1A1A1A] hover:bg-[#252525] border border-white/10 text-white py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="opacity-90"><path d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 16.25 5 12c0-4.1 3.2-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.15-1.81-.15-1.81z"></path></svg>
-                                    Connect calendar
-                                    <ChevronRight size={14} className="text-slate-500" />
-                                </button>
+                                {/* Content Layer (z-10) */}
+                                <div className="relative z-10 w-full flex flex-col items-center">
+                                    <h3 className="text-xl font-semibold text-white leading-tight mb-2">
+                                        Link your calendar to<br />see upcoming events
+                                    </h3>
 
-                                {/* Mock upcoming event preview at bottom */}
-                                <div className="mt-4 pt-4 border-t border-white/5 opacity-50">
-                                    <span className="text-[10px] uppercase font-bold text-slate-500">Todo</span>
-                                    <div className="text-xs text-slate-300 mt-1">Q4 Product Roadmap Review</div>
-                                    <div className="text-[10px] text-slate-500">Today at 4:30 PM</div>
+                                    <button className="bg-[#0A0A0A] hover:bg-[#151515] border border-white/10 text-white pl-4 pr-5 py-2.5 rounded-full text-sm font-medium transition-all hover:scale-105 hover:shadow-lg flex items-center gap-2.5 group/btn shadow-sm">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="brightness-200 contrast-0 grayscale">
+                                            <path d="M23.52 12.212c0-.848-.076-1.654-.216-2.428H12v4.594h6.473c-.28 1.503-1.12 2.775-2.38 3.619v3.01h3.84c2.247-2.07 3.54-5.118 3.54-8.795z" fill="#4285F4" />
+                                            <path d="M12 24c3.24 0 5.957-1.074 7.942-2.906l-3.84-3.01c-1.078.722-2.454 1.15-4.102 1.15-3.124 0-5.77-2.112-6.72-4.954H1.322v3.106C3.38 21.442 7.378 24 12 24z" fill="#34A853" />
+                                            <path d="M5.28 14.28A7.276 7.276 0 0 1 4.908 12c0-.8.14-1.57.387-2.28V6.613H1.322A11.968 11.968 0 0 0 0 12c0 1.943.468 3.774 1.322 5.387l3.96-3.107z" fill="#FBBC05" />
+                                            <path d="M12 4.75c1.764 0 3.345.607 4.588 1.795l3.433-3.434C17.95 1.258 15.234 0 12 0 7.378 0 3.378 2.558 1.322 6.613l3.957 3.107c.95-2.842 3.595-4.97 6.72-4.97z" fill="#EA4335" />
+                                        </svg>
+                                        Connect calendar
+                                        <ArrowRight size={14} className="text-slate-400 group-hover/btn:translate-x-0.5 transition-transform" />
+                                    </button>
                                 </div>
                             </div>
                         </div>
