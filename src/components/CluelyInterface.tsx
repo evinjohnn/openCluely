@@ -46,7 +46,11 @@ interface Message {
     intent?: string;
 }
 
-const NativelyInterface = () => {
+interface NativelyInterfaceProps {
+    onEndMeeting?: () => void;
+}
+
+const NativelyInterface: React.FC<NativelyInterfaceProps> = ({ onEndMeeting }) => {
     const [isExpanded, setIsExpanded] = useState(true);
     const [inputValue, setInputValue] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
@@ -1111,7 +1115,7 @@ Provide only the answer, nothing else.`;
                     <TopPill
                         expanded={isExpanded}
                         onToggle={() => setIsExpanded(!isExpanded)}
-                        onQuit={() => window.electronAPI.quitApp()}
+                        onQuit={() => onEndMeeting ? onEndMeeting() : window.electronAPI.quitApp()}
                     />
                     <div className="
                     relative w-[600px] max-w-full

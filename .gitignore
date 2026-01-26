@@ -149,3 +149,6 @@ native-audio-service/Sources/CopilotAudioService/Protos/
 
 # OS
 .DS_Store
+
+# Electron release builds
+release/

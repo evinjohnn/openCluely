@@ -1,6 +1,19 @@
+@font-face {
+  font-family: 'CelebMF';
+  src: url('./font/Masterfont - Celeb MF Medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  /* System Fonts - SF Pro */
+  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
 
 /* App sizing baseline (required for h-full / flex scroll areas) */
 html,
@@ -9,15 +22,37 @@ body,
   height: 100%;
   width: 100%;
   overflow: hidden;
+  /* Transparent background to let vibrancy show through */
+  background: transparent;
+  /* System font */
+  font-family: var(--font-system);
+  /* Smoother fonts */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Allow selection in specific areas if needed */
+.selectable {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 body {
   margin: 0;
+  /* cursor: default; -> Removed to let app dictate cursor */
+}
+
+/* Scrollbar Styling - Minimal macOS Hidden style */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
 }
 
 /* Liquid Glass Effect Base - Refined Matte Look */
+/* Used for floating elements on top of the vibrant background */
 .liquid-glass {
   background: rgba(30, 30, 30, 0.65);
+  /* Restored original opacity */
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-backdrop-filter: blur(24px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -46,34 +81,29 @@ body {
   opacity: 0.9;
 }
 
-/* Fallback for browsers without backdrop-filter support */
-@supports not (backdrop-filter: blur()) {
-  .liquid-glass {
-    background: rgba(30, 30, 30, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-}
-
-.header-draggable-area {
+/* Electron Stability - Drag Regions */
+/* Title bar area usually */
+.titlebar-drag-region {
   -webkit-app-region: drag;
-  height: 24px;
-  width: 100%;
-  background: transparent;
-  cursor: move;
-  position: relative;
-  z-index: 1000;
-  border-radius: 1rem 1rem 0 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  /* Standard macOS titlebar height */
+  z-index: 9999;
+  cursor: default;
 }
 
 .draggable-area {
   -webkit-app-region: drag;
   position: relative;
   z-index: 50;
-  cursor: move;
+  cursor: default;
 }
 
-.draggable-area button {
-  -webkit-app-region: no-drag;
+.drag-region {
+  -webkit-app-region: drag;
 }
 
 /* Make sure buttons and interactive elements are not draggable */
@@ -81,157 +111,32 @@ button,
 input,
 select,
 textarea,
-.interactive {
+.interactive,
+.no-drag,
+[role="button"],
+a {
   -webkit-app-region: no-drag;
+  cursor: default;
 }
 
-/* Override for the liquid glass bar - make it draggable */
-.liquid-glass.header-draggable-area {
-  -webkit-app-region: drag;
-  cursor: move;
-}
-
-/* But keep buttons inside clickable */
-.liquid-glass.header-draggable-area button {
-  -webkit-app-region: no-drag;
+/* Override cursor for clickable items */
+button:hover,
+[role="button"]:hover,
+a:hover,
+.cursor-pointer {
   cursor: pointer;
 }
 
-/* Dark theme liquid glass variant */
-.liquid-glass-dark {
-  background: rgba(15, 15, 15, 0.8);
-  backdrop-filter: blur(32px) saturate(120%);
-  -webkit-backdrop-filter: blur(32px) saturate(120%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow:
-    0 24px 48px -12px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+/* Utilities for sidebar layout */
+.app-sidebar {
+  background: rgba(0, 0, 0, 0.2);
+  /* Darker sidebar */
+  backdrop-filter: blur(10px);
+  /* Minor local blur */
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Ensure content is not blurred */
-.glass-content {
-  position: relative;
-  z-index: 1;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-/* Chat container specific styling - Cleaner */
-.liquid-glass.chat-container {
-  min-height: auto;
-  height: auto;
-  background: rgba(35, 35, 38, 0.85);
-  backdrop-filter: blur(32px);
-  -webkit-backdrop-filter: blur(32px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow:
-    0 30px 60px -12px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-/* Thin bar variant of liquid glass - for command bar */
-.liquid-glass-bar {
-  background: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(16px) saturate(180%) brightness(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%) brightness(120%);
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 1rem;
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-  position: relative;
-  overflow: hidden;
-  height: 32px !important;
-  min-height: 32px !important;
-  max-height: 32px !important;
-}
-
-/* Shimmer effect for bar variant */
-.liquid-glass-bar::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg,
-      transparent,
-      rgba(255, 255, 255, 0.1),
-      transparent);
-  animation: shimmer 3s ease-in-out infinite;
-  pointer-events: none;
-}
-
-/* Top Pill Glass Micro-interactions */
-.top-pill-glass {
-  transition:
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 220ms ease,
-    opacity 180ms ease;
-}
-
-.top-pill-glass:hover {
-  transform: translateY(-0.5px);
-  filter: saturate(1.05);
-}
-
-.top-pill-glass:active {
-  transform: translateY(0.5px) scale(0.985);
-}
-
-.pill-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(20, 20, 22, 0.55);
-  transition: background 160ms ease, transform 120ms ease;
-  cursor: pointer;
-}
-
-.pill-icon:hover {
-  background: rgba(30, 30, 34, 0.7);
-}
-
-.pill-icon:active {
-  transform: scale(0.94);
-}
-
-.pill-center {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 500;
-  color: white;
-  background: rgba(60, 60, 65, 0.5);
-  transition: background 160ms ease, transform 120ms ease;
-  cursor: pointer;
-}
-
-.pill-center:hover {
-  background: rgba(70, 70, 76, 0.6);
-}
-
-.pill-center:active {
-  transform: scale(0.97);
-}
-
-/* Electron Stability - Drag Regions */
-.draggable-area {
-  -webkit-app-region: drag;
-  position: relative;
-  z-index: 50;
-}
-
-.draggable-area button,
-.draggable-area .pill-center,
-.draggable-area .pill-icon,
-.no-drag {
-  -webkit-app-region: no-drag;
+.app-content {
+  background: transparent;
+  /* Let vibrancy show */
 }

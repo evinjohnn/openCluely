@@ -64,6 +64,11 @@ interface ElectronAPI {
   getIntelligenceContext: () => Promise<{ context: string; lastAssistantMessage: string | null; activeMode: string }>
   resetIntelligence: () => Promise<{ success: boolean; error?: string }>
 
+  // Meeting Lifecycle
+  startMeeting: () => Promise<{ success: boolean; error?: string }>
+  endMeeting: () => Promise<{ success: boolean; error?: string }>
+  getRecentMeetings: () => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
+
   // Intelligence Mode Events
   onIntelligenceAssistUpdate: (callback: (data: { insight: string }) => void) => () => void
   onIntelligenceSuggestedAnswer: (callback: (data: { answer: string; question: string; confidence: number }) => void) => () => void
@@ -322,6 +327,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   submitManualQuestion: (question: string) => ipcRenderer.invoke("submit-manual-question", question),
   getIntelligenceContext: () => ipcRenderer.invoke("get-intelligence-context"),
   resetIntelligence: () => ipcRenderer.invoke("reset-intelligence"),
+
+  // Meeting Lifecycle
+  startMeeting: () => ipcRenderer.invoke("start-meeting"),
+  endMeeting: () => ipcRenderer.invoke("end-meeting"),
+  getRecentMeetings: () => ipcRenderer.invoke("get-recent-meetings"),
+
+  // Window Mode
+  setWindowMode: (mode: 'launcher' | 'overlay') => ipcRenderer.invoke("set-window-mode", mode),
 
   // Intelligence Mode Events
   onIntelligenceAssistUpdate: (callback: (data: { insight: string }) => void) => {

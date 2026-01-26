@@ -41,6 +41,7 @@ import { ScreenshotHelper } from "./ScreenshotHelper"
 import { ShortcutsHelper } from "./shortcuts"
 import { ProcessingHelper } from "./ProcessingHelper"
 import { NativeAudioClient, TranscriptSegment, SuggestionTrigger, ServiceStatus } from "./NativeAudioClient"
+import { NativeServiceManager } from "./NativeServiceManager"
 import { IntelligenceManager } from "./IntelligenceManager"
 import { SystemAudioCapture } from "./audio/SystemAudioCapture"
 import { GoogleSTT } from "./audio/GoogleSTT"
@@ -54,6 +55,7 @@ export class AppState {
   public shortcutsHelper: ShortcutsHelper
   public processingHelper: ProcessingHelper
   private nativeAudioClient: NativeAudioClient
+  private nativeServiceManager: NativeServiceManager
   private intelligenceManager: IntelligenceManager
   private tray: Tray | null = null
 
@@ -105,6 +107,9 @@ export class AppState {
     // Initialize NativeAudioClient for real-time transcription
     this.nativeAudioClient = new NativeAudioClient()
 
+    // Initialize Service Manager
+    this.nativeServiceManager = new NativeServiceManager()
+
     // Initialize IntelligenceManager with LLMHelper
     this.intelligenceManager = new IntelligenceManager(this.processingHelper.getLLMHelper())
     this.setupNativeAudioEvents()
@@ -150,32 +155,70 @@ export class AppState {
           confidence: segment.confidence
         });
 
-        // Forward to Renderer for UI
-        const mainWindow = this.getMainWindow();
-        if (mainWindow) {
-          mainWindow.webContents.send('native-audio-transcript', {
-            speaker: 'interviewer',
-            text: segment.text,
-            timestamp: Date.now(),
-            final: segment.isFinal,
-            confidence: segment.confidence
-          });
-        }
+        // Forward to Renderer for UI (Broadcast to both if available)
+        const helper = this.getWindowHelper();
+        const payload = {
+          speaker: 'interviewer',
+          text: segment.text,
+          timestamp: Date.now(),
+          final: segment.isFinal,
+          confidence: segment.confidence
+        };
+        helper.getLauncherWindow()?.webContents.send('native-audio-transcript', payload);
+        helper.getOverlayWindow()?.webContents.send('native-audio-transcript', payload);
       });
 
       this.googleSTT?.on('error', (err: Error) => {
         console.error('[Main] GoogleSTT Error:', err);
       });
 
-      // Start the pipeline
-      this.googleSTT?.start();
-      this.systemAudioCapture?.start();
+      // DO NOT Start the pipeline automatically
+      // this.googleSTT?.start();
+      // this.systemAudioCapture?.start();
 
-      console.log('[Main] System Audio Pipeline (SoX + GoogleNode) Initialized');
+      console.log('[Main] System Audio Pipeline (SoX + GoogleNode) Initialized (Paused)');
 
     } catch (err) {
       console.error('[Main] Failed to setup System Audio Pipeline:', err);
     }
+  }
+
+  public async startMeeting(): Promise<void> {
+    console.log('[Main] Starting Meeting...');
+
+    // 1. Start Native Audio Service Process
+    this.nativeServiceManager.start();
+
+    // Give it a moment to spin up and open socket
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 2. Start Native Audio Client (Connect to it)
+    await this.connectNativeAudio();
+
+    // 3. Start System Audio (Speaker)
+    this.googleSTT?.start();
+    this.systemAudioCapture?.start();
+
+    // 4. Update Window State if needed
+    // this.setView("meeting"); // Frontend handles this via state, but backend could enforce
+  }
+
+  public async endMeeting(): Promise<void> {
+    console.log('[Main] Ending Meeting...');
+
+    // 1. Stop Native Audio Client
+    this.disconnectNativeAudio();
+
+    // 2. Stop Native Service Process
+    this.nativeServiceManager.stop();
+
+    // 3. Stop System Audio
+    this.systemAudioCapture?.stop();
+    this.googleSTT?.stop();
+
+    // 4. Reset Intelligence Context?
+    // this.intelligenceManager.reset(); 
+    // Maybe we want to keep it for the summary view? Prompt says: "The meeting transcript and notes are finalized and saved locally."
   }
 
   private setupIntelligenceEvents(): void {
@@ -183,10 +226,10 @@ export class AppState {
 
     // Forward intelligence events to renderer
     this.intelligenceManager.on('assist_update', (insight: string) => {
-      const win = mainWindow()
-      if (win) {
-        win.webContents.send('intelligence-assist-update', { insight })
-      }
+      // Send to both if both exist, though mostly overlay needs it
+      const helper = this.getWindowHelper();
+      helper.getLauncherWindow()?.webContents.send('intelligence-assist-update', { insight });
+      helper.getOverlayWindow()?.webContents.send('intelligence-assist-update', { insight });
     })
 
     this.intelligenceManager.on('suggested_answer', (answer: string, question: string, confidence: number) => {
@@ -375,6 +418,10 @@ export class AppState {
   // Getters and Setters
   public getMainWindow(): BrowserWindow | null {
     return this.windowHelper.getMainWindow()
+  }
+
+  public getWindowHelper(): WindowHelper {
+    return this.windowHelper
   }
 
   public getIntelligenceManager(): IntelligenceManager {
@@ -596,6 +643,7 @@ async function initializeApp() {
   initializeIpcHandlers(appState)
 
   app.whenReady().then(() => {
+    app.setName("Natively"); // Fix App Name in Menu
     console.log("App is ready")
     appState.createWindow()
     appState.createTray()
@@ -605,14 +653,24 @@ async function initializeApp() {
     // Pre-create settings window in background for faster first open
     appState.settingsWindowHelper.preloadWindow()
 
-    // Connect to native audio service
-    appState.connectNativeAudio().then(() => {
-      console.log("Native audio client connected/connecting...")
-    });
+    // Connect to native audio service - REMOVED for Launcher Flow
+    // appState.connectNativeAudio().then(() => {
+    //   console.log("Native audio client connected/connecting...")
+    // });
+
+    // Simplified Dock Icon Logic - REMOVED per user request
+    // We will rely on Electron's default for Dev, and package.json for Build.
+
+    if (process.platform === 'darwin') {
+      app.dock.show(); // Ensure dock is visible
+    }
   })
 
   app.on("activate", () => {
     console.log("App activated")
+    if (process.platform === 'darwin') {
+      app.dock.show();
+    }
     if (appState.getMainWindow() === null) {
       appState.createWindow()
     }
@@ -632,7 +690,7 @@ async function initializeApp() {
     AppState.getInstance().getIntelligenceManager().openTranscriptFile();
   });
 
-  app.dock?.hide() // Hide dock icon (optional)
+  // app.dock?.hide() // REMOVED: User wants Dock icon visible
   app.commandLine.appendSwitch("disable-background-timer-throttling")
 }
 

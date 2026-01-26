@@ -18,11 +18,14 @@ export function initializeIpcHandlers(appState: AppState): void {
         appState.settingsWindowHelper.setWindowDimensions(settingsWin, width, height)
       } else if (advancedWin && !advancedWin.isDestroyed() && advancedWin.webContents.id === senderWebContents.id) {
         appState.settingsWindowHelper.setWindowDimensions(advancedWin, width, height)
-      } else {
-        appState.setWindowDimensions(width, height)
       }
     }
   )
+
+  ipcMain.handle("set-window-mode", async (event, mode: 'launcher' | 'overlay') => {
+    appState.getWindowHelper().setWindowMode(mode);
+    return { success: true };
+  })
 
   ipcMain.handle("delete-screenshot", async (event, path: string) => {
     return appState.deleteScreenshot(path)
@@ -71,6 +74,7 @@ export function initializeIpcHandlers(appState: AppState): void {
   })
 
   ipcMain.handle("show-window", async () => {
+    // Default show main window (Launcher usually)
     appState.showMainWindow()
   })
 
@@ -337,6 +341,39 @@ export function initializeIpcHandlers(appState: AppState): void {
 
   ipcMain.handle("native-audio-status", async () => {
     return { connected: appState.isNativeAudioConnected() };
+  });
+
+  // ==========================================
+  // Meeting Lifecycle Handlers
+  // ==========================================
+
+  ipcMain.handle("start-meeting", async () => {
+    try {
+      await appState.startMeeting();
+      return { success: true };
+    } catch (error: any) {
+      console.error("Error starting meeting:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("end-meeting", async () => {
+    try {
+      await appState.endMeeting();
+      return { success: true };
+    } catch (error: any) {
+      console.error("Error ending meeting:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("get-recent-meetings", async () => {
+    // Mock data for now
+    return [
+      { id: '1', title: 'Cluely Demo with CEO Roy Lee', date: 'Today at 7:30am', duration: '4:48', summary: 'Discussed roadmap...' },
+      { id: '2', title: 'Casual Conversation with AI', date: 'Wed, Jan 21 at 4:32am', duration: '2:21', summary: ' AI ethics...' },
+      { id: '3', title: 'Untitled session', date: 'Wed, Jan 21 at 2:05am', duration: '0:25', summary: 'Quick test...' },
+    ];
   });
 
   ipcMain.handle("open-external", async (event, url: string) => {

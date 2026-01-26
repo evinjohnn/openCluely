@@ -31,6 +31,10 @@ export interface ElectronAPI {
   hideWindow: () => Promise<void>
   setUndetectable: (state: boolean) => Promise<{ success: boolean; error?: string }>
   onSettingsVisibilityChange: (callback: (isVisible: boolean) => void) => () => void
+  toggleSettingsWindow: (coords?: { x: number; y: number }) => Promise<void>
+  closeSettingsWindow: () => Promise<void>
+  toggleAdvancedSettings: () => Promise<void>
+  closeAdvancedSettings: () => Promise<void>
 
   // LLM Model Management
   getCurrentLlmConfig: () => Promise<{ provider: "ollama" | "gemini"; model: string; isOllama: boolean }>
@@ -60,6 +64,12 @@ export interface ElectronAPI {
   submitManualQuestion: (question: string) => Promise<{ answer: string | null; question: string }>
   getIntelligenceContext: () => Promise<{ context: string; lastAssistantMessage: string | null; activeMode: string }>
   resetIntelligence: () => Promise<{ success: boolean; error?: string }>
+
+  // Meeting Lifecycle
+  startMeeting: () => Promise<{ success: boolean; error?: string }>
+  endMeeting: () => Promise<{ success: boolean; error?: string }>
+  getRecentMeetings: () => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
+  setWindowMode: (mode: 'launcher' | 'overlay') => Promise<void>
 
   // Intelligence Mode Events
   onIntelligenceAssistUpdate: (callback: (data: { insight: string }) => void) => () => void
