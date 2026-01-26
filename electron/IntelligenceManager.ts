@@ -113,9 +113,17 @@ export class IntelligenceManager extends EventEmitter {
         this.llmHelper = llmHelper;
         this.initializeModeLLMs();
 
-        // Initialize transcript file
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        this.transcriptPath = path.join(os.tmpdir(), `natively_transcript_${timestamp}.txt`);
+        // Initialize transcript file in Documents folder for better visibility
+        try {
+            const documentsPath = app.getPath('documents');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            this.transcriptPath = path.join(documentsPath, `natively_transcript_${timestamp}.txt`);
+        } catch (err) {
+            console.error('[IntelligenceManager] Failed to get Documents path, falling back to temp:', err);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            this.transcriptPath = path.join(os.tmpdir(), `natively_transcript_${timestamp}.txt`);
+        }
+
         this.initializeTranscriptFile();
     }
 
@@ -125,7 +133,7 @@ export class IntelligenceManager extends EventEmitter {
             fs.writeFileSync(this.transcriptPath, header, 'utf8');
             console.log(`[IntelligenceManager] Transcript log created at: ${this.transcriptPath}`);
         } catch (err) {
-            console.error(`[IntelligenceManager] Failed to create transcript log:`, err);
+            console.error(`[IntelligenceManager] Failed to create transcript log at ${this.transcriptPath}:`, err);
         }
     }
 
@@ -134,6 +142,7 @@ export class IntelligenceManager extends EventEmitter {
         const entry = `[${time}] ${role.toUpperCase()}: ${text}\n\n`;
         try {
             fs.appendFileSync(this.transcriptPath, entry, 'utf8');
+            console.log(`[IntelligenceManager] Appended to log: ${text.substring(0, 30)}...`);
         } catch (err) {
             console.warn(`[IntelligenceManager] Failed to write to transcript log:`, err);
         }

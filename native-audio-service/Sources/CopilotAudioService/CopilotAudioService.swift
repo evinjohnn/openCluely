@@ -125,6 +125,8 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     func start() {
         Logger.log("Starting Natively Audio Service...", level: .info)
         
+        checkSystemAudioRouting()
+        
         // Request microphone permission
         requestMicrophonePermission { [weak self] granted in
             guard let self = self else { return }
@@ -172,6 +174,11 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     }
     
     private func initializeComponents() {
+        // ADD THIS FIRST - List all devices to debug
+        Logger.log("========== AUDIO DEVICE DISCOVERY ==========", level: .warning)
+        HALSystemAudioCapture.listAllDevices()
+        Logger.log("===========================================", level: .warning)
+
         do {
             // Initialize Auth
             var effectiveProjectId = config.googleProjectId
@@ -249,6 +256,10 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     // MARK: - AudioCaptureDelegate
     
     func audioCaptureManager(_ manager: AudioCaptureManager, didCapture chunk: Data, from source: AudioSource) {
+        // Trace log for system audio to verify data flow
+        if source == .systemAudio {
+            Logger.log("Delegate CAPTURED system audio: \(chunk.count) bytes", level: .debug)
+        }
         // Forward to STT
         sttManager?.sendAudio(chunk, to: source)
     }
@@ -261,6 +272,48 @@ final class CopilotAudioService: AudioCaptureDelegate, STTStreamDelegate, IPCSer
     func audioCaptureManager(_ manager: AudioCaptureManager, deviceChanged deviceUID: String?, for source: AudioSource) {
         Logger.log("Audio device changed [\(source.rawValue)]: \(deviceUID ?? "unknown")", level: .warning)
         sendStatusUpdate()
+    }
+    
+    private func checkSystemAudioRouting() {
+        var deviceID: AudioDeviceID = 0
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address, 0, nil, &size, &deviceID
+        )
+        
+        var deviceName: CFString = "" as CFString
+        var nameSize = UInt32(MemoryLayout<CFString>.size)
+        var nameAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceNameCFString,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &nameSize, &deviceName)
+        
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", level: .warning)
+        Logger.log("⚠️  CURRENT SYSTEM OUTPUT: \(deviceName)", level: .warning)
+        
+        let deviceNameStr = deviceName as String
+        if !deviceNameStr.lowercased().contains("blackhole") && 
+           !deviceNameStr.lowercased().contains("multi") &&
+           !deviceNameStr.lowercased().contains("mixed") &&
+           !deviceNameStr.lowercased().contains("aggregate") {
+            Logger.log("⚠️  WARNING: System output is NOT BlackHole!", level: .warning)
+            Logger.log("⚠️  System audio will NOT be captured.", level: .warning)
+            Logger.log("⚠️  Set output to BlackHole or Multi-Output Device in System Settings.", level: .warning)
+        } else {
+            Logger.log("✅ System output includes BlackHole - audio should be captured", level: .info)
+        }
+        Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", level: .warning)
     }
     
     // MARK: - STTStreamDelegate
