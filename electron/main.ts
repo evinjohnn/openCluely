@@ -61,6 +61,7 @@ export class AppState {
 
   // View management
   private view: "queue" | "solutions" = "queue"
+  private isUndetectable: boolean = false
 
   private problemInfo: {
     problem_statement: string
@@ -408,6 +409,14 @@ export class AppState {
     this.nativeAudioClient.sendAssistantSuggestion(suggestion)
   }
 
+  public updateGoogleCredentials(keyPath: string): void {
+    if (this.googleSTT) {
+      this.googleSTT.setCredentials(keyPath);
+    } else {
+      console.warn('[AppState] GoogleSTT not initialized, cannot update credentials');
+    }
+  }
+
   public static getInstance(): AppState {
     if (!AppState.instance) {
       AppState.instance = new AppState()
@@ -630,8 +639,13 @@ export class AppState {
   }
 
   public setUndetectable(state: boolean): void {
+    this.isUndetectable = state
     this.windowHelper.setContentProtection(state)
     this.settingsWindowHelper.setContentProtection(state)
+  }
+
+  public getUndetectable(): boolean {
+    return this.isUndetectable
   }
 }
 

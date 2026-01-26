@@ -43,6 +43,7 @@ interface ElectronAPI {
   switchToOllama: (model?: string, url?: string) => Promise<{ success: boolean; error?: string }>
   switchToGemini: (apiKey?: string, modelId?: string) => Promise<{ success: boolean; error?: string }>
   testLlmConnection: () => Promise<{ success: boolean; error?: string }>
+  selectServiceAccount: () => Promise<{ success: boolean; path?: string; cancelled?: boolean; error?: string }>
 
   // Native Audio Service Events
   onNativeAudioTranscript: (callback: (transcript: { speaker: string; text: string; final: boolean }) => void) => () => void
@@ -239,6 +240,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   hideWindow: () => ipcRenderer.invoke("hide-window"),
   openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
   setUndetectable: (state: boolean) => ipcRenderer.invoke("set-undetectable", state),
+  getUndetectable: () => ipcRenderer.invoke("get-undetectable"),
 
   onSettingsVisibilityChange: (callback: (isVisible: boolean) => void) => {
     const subscription = (_: any, isVisible: boolean) => callback(isVisible)
@@ -262,6 +264,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   switchToOllama: (model?: string, url?: string) => ipcRenderer.invoke("switch-to-ollama", model, url),
   switchToGemini: (apiKey?: string, modelId?: string) => ipcRenderer.invoke("switch-to-gemini", apiKey, modelId),
   testLlmConnection: () => ipcRenderer.invoke("test-llm-connection"),
+  selectServiceAccount: () => ipcRenderer.invoke("select-service-account"),
 
   // Native Audio Service Events
   onNativeAudioTranscript: (callback: (transcript: { speaker: string; text: string; final: boolean }) => void) => {

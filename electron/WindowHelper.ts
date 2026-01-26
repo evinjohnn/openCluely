@@ -117,7 +117,8 @@ export class WindowHelper {
 
     this.launcherWindow = new BrowserWindow(launcherSettings)
     this.launcherWindow.setContentProtection(true)
-    this.launcherWindow.loadURL(`${startUrl}?window=launcher`).catch(() => { })
+    this.launcherWindow.loadURL(`${startUrl}?window=launcher`).catch((e) => { console.error("Failed to load URL:", e) })
+    this.launcherWindow.webContents.openDevTools({ mode: 'detach' });
 
     // --- 2. Create Overlay Window (Hidden initially) ---
     const overlaySettings: Electron.BrowserWindowConstructorOptions = {

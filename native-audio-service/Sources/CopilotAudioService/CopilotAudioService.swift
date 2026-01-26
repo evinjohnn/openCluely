@@ -39,7 +39,7 @@ struct ServiceConfig: Codable {
         
         if let data = try? Data(contentsOf: configPath),
            let config = try? JSONDecoder().decode(ServiceConfig.self, from: data) {
-            return config
+            return config 
         }
         
         // Fallback to environment variables

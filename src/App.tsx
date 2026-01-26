@@ -101,7 +101,7 @@ const App: React.FC = () => {
   // Renders if window=launcher OR no param
   return (
     <div className="h-full min-h-0 w-full relative">
-      <div className="titlebar-drag-region" />
+
 
       <QueryClientProvider client={queryClient}>
         <ToastProvider>

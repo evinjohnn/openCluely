@@ -47,6 +47,14 @@ export class GoogleSTT extends EventEmitter {
         });
     }
 
+    public setCredentials(keyFilePath: string): void {
+        console.log(`[GoogleSTT] Updating credentials to: ${keyFilePath}`);
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = keyFilePath;
+        this.client = new SpeechClient({
+            keyFilename: keyFilePath
+        });
+    }
+
     public start(): void {
         if (this.isStreaming) return;
 

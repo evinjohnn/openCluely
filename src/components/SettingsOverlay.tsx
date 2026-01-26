@@ -1,5 +1,78 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mic, Speaker, Monitor, Keyboard, User, LifeBuoy, LogOut } from 'lucide-react';
+import {
+    X, Mic, Speaker, Monitor, Keyboard, User, LifeBuoy, LogOut,
+    Command, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
+    AppWindow, Camera, RotateCcw, Eye, Layout, MessageSquare, Crop,
+    ChevronDown, Check, BadgeCheck
+} from 'lucide-react';
+
+interface CustomSelectProps {
+    label: string;
+    icon: React.ReactNode;
+    value: string;
+    options: MediaDeviceInfo[];
+    onChange: (value: string) => void;
+    placeholder?: string;
+}
+
+const CustomSelect: React.FC<CustomSelectProps> = ({ label, icon, value, options, onChange, placeholder = "Select device" }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const selectedLabel = options.find(o => o.deviceId === value)?.label || placeholder;
+
+    return (
+        <div className="bg-[#262626] rounded-xl p-4 border border-white/5" ref={containerRef}>
+            <div className="flex items-center gap-2 mb-3">
+                <span className="text-gray-400">{icon}</span>
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</label>
+            </div>
+
+            <div className="relative">
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white flex items-center justify-between hover:bg-black/70 transition-colors"
+                >
+                    <span className="truncate pr-4">{selectedLabel}</span>
+                    <ChevronDown size={14} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isOpen && (
+                    <div className="absolute top-full left-0 w-full mt-1 bg-[#262626] border border-white/10 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto animated fadeIn">
+                        <div className="p-1 space-y-0.5">
+                            {options.map((device) => (
+                                <button
+                                    key={device.deviceId}
+                                    onClick={() => {
+                                        onChange(device.deviceId);
+                                        setIsOpen(false);
+                                    }}
+                                    className={`w-full text-left px-3 py-2 text-sm rounded-md flex items-center justify-between group transition-colors ${value === device.deviceId ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-white/5 hover:text-white'}`}
+                                >
+                                    <span className="truncate">{device.label || `Device ${device.deviceId.slice(0, 5)}...`}</span>
+                                    {value === device.deviceId && <Check size={14} className="text-blue-400" />}
+                                </button>
+                            ))}
+                            {options.length === 0 && (
+                                <div className="px-3 py-2 text-sm text-gray-500 italic">No devices found</div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 interface SettingsOverlayProps {
     isOpen: boolean;
@@ -8,32 +81,154 @@ interface SettingsOverlayProps {
 
 const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) => {
     const [activeTab, setActiveTab] = useState('general');
-    const [isDetectable, setIsDetectable] = useState(true);
+    const [isUndetectable, setIsUndetectable] = useState(false);
     const [openOnLogin, setOpenOnLogin] = useState(false);
 
     // Audio Settings
     const [inputDevices, setInputDevices] = useState<MediaDeviceInfo[]>([]);
+    const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
     const [selectedInput, setSelectedInput] = useState('');
+    const [selectedOutput, setSelectedOutput] = useState('');
     const [micLevel, setMicLevel] = useState(0);
 
     const [apiKey, setApiKey] = useState('');
+    const [serviceAccountPath, setServiceAccountPath] = useState('');
+
+    const audioContextRef = React.useRef<AudioContext | null>(null);
+    const analyserRef = React.useRef<AnalyserNode | null>(null);
+    const sourceRef = React.useRef<MediaStreamAudioSourceNode | null>(null);
+    const rafRef = React.useRef<number | null>(null);
+
+    const handleSelectServiceAccount = async () => {
+        try {
+            const result = await window.electronAPI.selectServiceAccount();
+            if (result.success && result.path) {
+                setServiceAccountPath(result.path);
+            }
+        } catch (error) {
+            console.error("Failed to select service account:", error);
+        }
+    };
 
     useEffect(() => {
         if (isOpen) {
+            // Load detectable status
+            if (window.electronAPI?.getUndetectable) {
+                window.electronAPI.getUndetectable().then(setIsUndetectable);
+            }
+
             // Load settings
             window.navigator.mediaDevices.enumerateDevices().then(devices => {
                 const inputs = devices.filter(d => d.kind === 'audioinput');
-                setInputDevices(inputs);
-                if (inputs.length > 0) setSelectedInput(inputs[0].deviceId);
-            });
+                const outputs = devices.filter(d => d.kind === 'audiooutput');
 
-            // Simulating level check
-            const interval = setInterval(() => {
-                setMicLevel(Math.random() * 100);
-            }, 100);
-            return () => clearInterval(interval);
+                setInputDevices(inputs);
+                setOutputDevices(outputs);
+
+                // Set initial selected devices if not already set
+                if (inputs.length > 0 && !selectedInput) setSelectedInput(inputs[0].deviceId);
+                if (outputs.length > 0 && !selectedOutput) setSelectedOutput(outputs[0].deviceId);
+            });
         }
-    }, [isOpen]);
+    }, [isOpen, selectedInput, selectedOutput]); // Re-run if isOpen changes, or if selected devices are cleared
+
+    // Effect for real-time audio level monitoring
+    useEffect(() => {
+        if (isOpen && activeTab === 'audio') {
+            let mounted = true;
+
+            const startAudio = async () => {
+                try {
+                    // Cleanup previous audio context if it exists
+                    if (audioContextRef.current) {
+                        audioContextRef.current.close();
+                    }
+
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            deviceId: selectedInput ? { exact: selectedInput } : undefined
+                        }
+                    });
+
+                    if (!mounted) return;
+
+                    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                    const analyser = audioContext.createAnalyser();
+                    const source = audioContext.createMediaStreamSource(stream);
+
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+
+                    audioContextRef.current = audioContext;
+                    analyserRef.current = analyser;
+                    sourceRef.current = source;
+
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    let smoothLevel = 0;
+
+                    const updateLevel = () => {
+                        if (!mounted || !analyserRef.current) return;
+                        // Use Time Domain Data for accurate volume (waveform) instead of frequency
+                        analyserRef.current.getByteTimeDomainData(dataArray);
+
+                        let sum = 0;
+                        for (let i = 0; i < dataArray.length; i++) {
+                            // Convert 0-255 to -1 to 1 range
+                            const value = (dataArray[i] - 128) / 128;
+                            sum += value * value;
+                        }
+
+                        // Calculate RMS
+                        const rms = Math.sqrt(sum / dataArray.length);
+
+                        // Convert to simpler 0-100 range with some boost
+                        // RMS is usually very small (0.01 - 0.5 for normal speech)
+                        // Logarithmic scaling feels more natural for volume
+                        const db = 20 * Math.log10(rms);
+                        // Approximate mapping: -60dB (silence) to 0dB (max) -> 0 to 100
+                        const targetLevel = Math.max(0, Math.min(100, (db + 60) * 2));
+
+                        // Apply smoothing
+                        if (targetLevel > smoothLevel) {
+                            smoothLevel = smoothLevel * 0.7 + targetLevel * 0.3; // Fast attack
+                        } else {
+                            smoothLevel = smoothLevel * 0.95 + targetLevel * 0.05; // Slow decay
+                        }
+
+                        setMicLevel(smoothLevel);
+
+                        rafRef.current = requestAnimationFrame(updateLevel);
+                    };
+
+                    updateLevel();
+                } catch (error) {
+                    console.error("Error accessing microphone:", error);
+                    setMicLevel(0); // Reset level on error
+                }
+            };
+
+            startAudio();
+
+            return () => {
+                mounted = false;
+                if (rafRef.current) cancelAnimationFrame(rafRef.current);
+                if (sourceRef.current) sourceRef.current.disconnect();
+                if (audioContextRef.current) {
+                    audioContextRef.current.close();
+                    audioContextRef.current = null;
+                }
+                setMicLevel(0); // Reset mic level on cleanup
+            };
+        } else {
+            // Cleanup when closing tab or overlay
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            if (audioContextRef.current) {
+                audioContextRef.current.close();
+                audioContextRef.current = null;
+            }
+            setMicLevel(0);
+        }
+    }, [isOpen, activeTab, selectedInput]);
 
     if (!isOpen) return null;
 
@@ -41,7 +236,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-8 animated fadeIn">
             <div className="bg-[#121212] w-full max-w-4xl h-[80vh] rounded-2xl border border-white/10 shadow-2xl flex overflow-hidden">
                 {/* Sidebar */}
-                <div className="w-64 bg-[#0a0a0a] flex flex-col border-r border-white/5">
+                <div className="w-64 bg-[#111111] flex flex-col border-r border-white/5">
                     <div className="p-6">
                         <h2 className="font-semibold text-gray-400 text-xs uppercase tracking-wider mb-4">Settings</h2>
                         <nav className="space-y-1">
@@ -55,7 +250,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                 onClick={() => setActiveTab('audio')}
                                 className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${activeTab === 'audio' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-gray-300 hover:bg-white/5'}`}
                             >
-                                <Mic size={16} /> Audio & Video
+                                <Mic size={16} /> Audio
                             </button>
                             <button
                                 onClick={() => setActiveTab('keybinds')}
@@ -83,23 +278,28 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto bg-[#121212] p-8">
+                <div className="flex-1 overflow-y-auto bg-[#1c1c1c] p-8">
                     {activeTab === 'general' && (
                         <div className="space-y-8 animated fadeIn">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-lg font-medium text-white">Detectable Mode</h3>
-                                    <p className="text-sm text-gray-400 mt-1">Hide Cluely from screen sharing tools like Zoom and Teams.</p>
+                            <div className="bg-[#262626] rounded-xl p-5 border border-white/5 flex items-center justify-between">
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        <Eye size={18} className="text-white" />
+                                        <h3 className="text-base font-bold text-white">Detectable</h3>
+                                    </div>
+                                    <p className="text-sm text-gray-400">
+                                        Cluely is currently {isUndetectable ? 'undetectable' : 'detectable'} by screen-sharing. <button className="text-blue-400 hover:underline">Supported apps here</button>
+                                    </p>
                                 </div>
                                 <div
                                     onClick={() => {
-                                        const newState = !isDetectable;
-                                        setIsDetectable(newState);
-                                        window.electronAPI?.setUndetectable(!newState);
+                                        const newState = !isUndetectable;
+                                        setIsUndetectable(newState);
+                                        window.electronAPI?.setUndetectable(newState);
                                     }}
-                                    className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${isDetectable ? 'bg-white/10' : 'bg-green-600'}`}
+                                    className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors ${isUndetectable ? 'bg-white/20' : 'bg-black/50'}`}
                                 >
-                                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${isDetectable ? 'translate-x-0' : 'translate-x-6'}`} />
+                                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${isUndetectable ? 'translate-x-5' : 'translate-x-0'}`} />
                                 </div>
                             </div>
 
@@ -107,69 +307,197 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
 
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h3 className="text-lg font-medium text-white">Open at Login</h3>
+                                    <h3 className="text-base font-medium text-white">Open at Login</h3>
                                     <p className="text-sm text-gray-400 mt-1">Automatically launch Cluely when you start your computer.</p>
                                 </div>
                                 <div
                                     onClick={() => setOpenOnLogin(!openOnLogin)}
-                                    className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${!openOnLogin ? 'bg-white/10' : 'bg-blue-600'}`}
+                                    className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors ${!openOnLogin ? 'bg-white/10' : 'bg-blue-600'}`}
                                 >
-                                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${!openOnLogin ? 'translate-x-0' : 'translate-x-6'}`} />
+                                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${!openOnLogin ? 'translate-x-0' : 'translate-x-5'}`} />
                                 </div>
                             </div>
 
                             <div className="h-px bg-white/5" />
 
                             <div>
-                                <h3 className="text-lg font-medium text-white mb-4">API Configuration</h3>
-                                <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                                <h3 className="text-base font-medium text-white mb-4">API Configuration</h3>
+                                <div className="bg-[#262626] rounded-xl p-5 border border-white/5">
                                     <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Gemini API Key</label>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-3">
                                         <input
                                             type="password"
                                             value={apiKey}
                                             onChange={(e) => setApiKey(e.target.value)}
                                             placeholder="AIzaSy..."
-                                            className="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                            className="flex-1 bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
                                         />
-                                        <button className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                                        <button className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors">
                                             Save
                                         </button>
                                     </div>
                                     <p className="text-xs text-gray-500 mt-2">Required for intelligence features.</p>
                                 </div>
                             </div>
+
+                            <div className="h-px bg-white/5" />
+
+                            <div>
+                                <h3 className="text-base font-medium text-white mb-4">Service Account Location</h3>
+                                <div className="bg-[#262626] rounded-xl p-5 border border-white/5">
+                                    <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Google Cloud Service Account JSON</label>
+                                    <div className="flex gap-3">
+                                        <div className="flex-1 bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-gray-400 truncate flex items-center">
+                                            {serviceAccountPath || "No file selected"}
+                                        </div>
+                                        <button
+                                            onClick={handleSelectServiceAccount}
+                                            className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                                        >
+                                            Select File
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-2">Used for native audio transcription (service-account.json).</p>
+                                </div>
+                            </div>
+
+                            <div className="h-px bg-white/5" />
+
+                            <div className="flex items-center justify-between pb-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 bg-[#262626] rounded-lg border border-white/5 flex items-center justify-center text-gray-400">
+                                        <BadgeCheck size={20} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-bold text-white">Version</h3>
+                                        <p className="text-sm text-gray-400">You are currently using Cluely version 1.0.0</p>
+                                    </div>
+                                </div>
+                                <button className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                                    Check for updates
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    {activeTab === 'keybinds' && (
+                        <div className="space-y-5 animated fadeIn select-text h-full flex flex-col justify-center">
+                            <div>
+                                <h3 className="text-base font-bold text-white mb-1">Keyboard shortcuts</h3>
+                                <p className="text-xs text-gray-400">Cluely works with these easy to remember commands.</p>
+                            </div>
+
+                            <div className="grid gap-6">
+                                {/* General Category */}
+                                <div>
+                                    <h4 className="text-sm font-bold text-white mb-3">General</h4>
+                                    <div className="space-y-1">
+                                        {[
+                                            { label: 'Toggle Visibility', keys: ['⌘', 'B'], icon: <Eye size={14} /> },
+                                            { label: 'Show/Center Natively', keys: ['⌘', '⇧', 'Space'], icon: <Layout size={14} /> },
+                                            { label: 'Process Screenshots', keys: ['⌘', 'Enter'], icon: <MessageSquare size={14} /> },
+                                            { label: 'Reset / Cancel', keys: ['⌘', 'R'], icon: <RotateCcw size={14} /> },
+                                            { label: 'Take Screenshot', keys: ['⌘', 'H'], icon: <Camera size={14} /> },
+                                            { label: 'Selective Screenshot', keys: ['⌘', '⇧', 'H'], icon: <Crop size={14} /> },
+                                        ].map((item, i) => (
+                                            <div key={i} className="flex items-center justify-between py-1.5 group">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-gray-400 group-hover:text-white transition-colors">{item.icon}</span>
+                                                    <span className="text-sm text-gray-300 font-medium group-hover:text-white transition-colors">{item.label}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    {item.keys.map((k, j) => (
+                                                        <span key={j} className="bg-[#262626] text-gray-300 px-2 py-1 rounded-md text-xs font-sans min-w-[24px] text-center shadow-sm border border-white/5">
+                                                            {k}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Window Category */}
+                                <div>
+                                    <h4 className="text-sm font-bold text-white mb-3">Window</h4>
+                                    <div className="space-y-1">
+                                        {[
+                                            { label: 'Move Window Up', keys: ['⌘', '↑'], icon: <ArrowUp size={14} /> },
+                                            { label: 'Move Window Down', keys: ['⌘', '↓'], icon: <ArrowDown size={14} /> },
+                                            { label: 'Move Window Left', keys: ['⌘', '←'], icon: <ArrowLeft size={14} /> },
+                                            { label: 'Move Window Right', keys: ['⌘', '→'], icon: <ArrowRight size={14} /> }
+                                        ].map((item, i) => (
+                                            <div key={i} className="flex items-center justify-between py-1.5 group">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-gray-400 group-hover:text-white transition-colors">{item.icon}</span>
+                                                    <span className="text-sm text-gray-300 font-medium group-hover:text-white transition-colors">{item.label}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    {item.keys.map((k, j) => (
+                                                        <span key={j} className="bg-[#262626] text-gray-300 px-2 py-1 rounded-md text-xs font-sans min-w-[24px] text-center shadow-sm border border-white/5">
+                                                            {k}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
 
                     {activeTab === 'audio' && (
-                        <div className="space-y-8 animated fadeIn">
+                        <div className="space-y-6 animated fadeIn">
                             <div>
-                                <h3 className="text-lg font-medium text-white mb-4">Microphone</h3>
-                                <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
-                                    <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Input Device</label>
-                                    <select
+                                <h3 className="text-lg font-medium text-white mb-4">Audio Configuration</h3>
+                                <div className="space-y-4">
+                                    <CustomSelect
+                                        label="Input Device"
+                                        icon={<Mic size={16} />}
                                         value={selectedInput}
-                                        onChange={(e) => setSelectedInput(e.target.value)}
-                                        className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
-                                    >
-                                        {inputDevices.map(device => (
-                                            <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
-                                        ))}
-                                        {inputDevices.length === 0 && <option>Default Microphone</option>}
-                                    </select>
+                                        options={inputDevices}
+                                        onChange={setSelectedInput}
+                                        placeholder="Default Microphone"
+                                    />
 
-                                    <div className="mt-6">
-                                        <div className="flex justify-between text-xs text-gray-400 mb-2">
+                                    <div>
+                                        <div className="flex justify-between text-xs text-gray-400 mb-2 px-1">
                                             <span>Input Level</span>
-                                            <span>{Math.round(micLevel)}%</span>
                                         </div>
-                                        <div className="h-2 bg-black/50 rounded-full overflow-hidden">
+                                        <div className="h-1.5 bg-[#262626] rounded-full overflow-hidden">
                                             <div
                                                 className="h-full bg-green-500 transition-all duration-100 ease-out"
                                                 style={{ width: `${micLevel}%` }}
                                             />
                                         </div>
+                                    </div>
+
+                                    <div className="h-px bg-white/5 my-4" />
+
+                                    <CustomSelect
+                                        label="Output Device"
+                                        icon={<Speaker size={16} />}
+                                        value={selectedOutput}
+                                        options={outputDevices}
+                                        onChange={setSelectedOutput}
+                                        placeholder="Default Speakers"
+                                    />
+
+                                    <div className="flex justify-end">
+                                        <button
+                                            onClick={() => {
+                                                const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'); // Simple test sound
+                                                // Try to set sinkId if supported
+                                                if (selectedOutput && (audio as any).setSinkId) {
+                                                    (audio as any).setSinkId(selectedOutput)
+                                                        .catch((e: any) => console.error("Error setting sink", e));
+                                                }
+                                                audio.play().catch(e => console.error("Error playing test sound", e));
+                                            }}
+                                            className="text-xs bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-md transition-colors flex items-center gap-2"
+                                        >
+                                            <Speaker size={12} /> Test Sound
+                                        </button>
                                     </div>
                                 </div>
                             </div>

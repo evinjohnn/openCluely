@@ -1,6 +1,6 @@
 // ipcHandlers.ts
 
-import { app, ipcMain, shell } from "electron"
+import { app, ipcMain, shell, dialog } from "electron"
 import { AppState } from "./main"
 import { GEMINI_FLASH_MODEL, GEMINI_PRO_MODEL } from "./IntelligenceManager"
 
@@ -246,6 +246,10 @@ export function initializeIpcHandlers(appState: AppState): void {
     return { success: true }
   })
 
+  ipcMain.handle("get-undetectable", async () => {
+    return appState.getUndetectable()
+  })
+
   // LLM Model Management Handlers
   ipcMain.handle("get-current-llm-config", async () => {
     try {
@@ -476,6 +480,31 @@ export function initializeIpcHandlers(appState: AppState): void {
       intelligenceManager.reset();
       return { success: true };
     } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+
+  // Service Account Selection
+  ipcMain.handle("select-service-account", async () => {
+    try {
+      const result: any = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, cancelled: true };
+      }
+
+      const filePath = result.filePaths[0];
+
+      // Update backend state immediately
+      appState.updateGoogleCredentials(filePath);
+
+      return { success: true, path: filePath };
+    } catch (error: any) {
+      console.error("Error selecting service account:", error);
       return { success: false, error: error.message };
     }
   });

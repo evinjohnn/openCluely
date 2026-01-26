@@ -3,6 +3,7 @@ import { ToggleLeft, ToggleRight, Search, Zap, Calendar, ArrowRight, ArrowLeft, 
 import icon from "./icon.png";
 import mainui from "../UI_comp/mainui.png";
 import calender from "../UI_comp/calender.png";
+import ConnectCalendarButton from './ui/ConnectCalendarButton';
 
 interface Meeting {
     id: string;
@@ -22,8 +23,17 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
     const [isDetectable, setIsDetectable] = useState(true);
 
     useEffect(() => {
-        window.electronAPI.getRecentMeetings().then(setMeetings).catch(console.error);
+        console.log("Launcher mounted");
+        if (window.electronAPI && window.electronAPI.getRecentMeetings) {
+            window.electronAPI.getRecentMeetings().then(setMeetings).catch(err => console.error("Failed to fetch meetings:", err));
+        } else {
+            console.error("electronAPI or getRecentMeetings is missing");
+        }
     }, []);
+
+    if (!window.electronAPI) {
+        return <div className="text-white p-10">Error: Electron API not initialized. Check preload script.</div>;
+    }
 
     const toggleDetectable = () => {
         const newState = !isDetectable;
@@ -76,12 +86,12 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                 </div>
             </header>
 
-            {/* Main Scrollable Area */}
-            <main className="flex-1 overflow-y-auto flex flex-col">
+            {/* Main Area - Fixed Top, Scrollable Bottom */}
+            <main className="flex-1 flex flex-col overflow-hidden">
 
-                {/* TOP SECTION: Grey Background */}
-                <section className="bg-[#151515] px-8 pt-8 pb-12 border-b border-white/5">
-                    <div className="max-w-5xl mx-auto space-y-10">
+                {/* TOP SECTION: Grey Background (Fixed) */}
+                <section className="bg-[#151515] px-8 pt-6 pb-8 border-b border-white/5 shrink-0">
+                    <div className="max-w-4xl mx-auto space-y-6">
                         {/* 1.5. Hero Header (Title + Controls + CTA) */}
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
@@ -161,9 +171,9 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                         </div>
 
                         {/* 2. Hero Section */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[220px]">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 h-[198px]">
                             {/* Left Main Card */}
-                            <div className="md:col-span-2 relative group rounded-[24px] overflow-hidden border border-white/10 bg-[#050505]">
+                            <div className="md:col-span-2 relative group rounded-xl overflow-hidden border border-white/10 bg-[#050505]">
                                 {/* Backdrop Image */}
                                 <div className="absolute inset-0">
                                     <img src={mainui} alt="" className="w-full h-full object-cover opacity-100 transition-opacity duration-500" />
@@ -174,50 +184,42 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                 <div className="absolute inset-0 bg-blue-600/5 mix-blend-overlay opacity-50" />
 
                                 {/* Content */}
-                                <div className="absolute inset-0 p-8 flex flex-col justify-between z-10">
+                                <div className="absolute inset-0 p-6 flex flex-col justify-between z-10">
                                     <div className="max-w-md">
-                                        <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Start Natively and get notes.</h2>
-                                        <p className="text-sm text-slate-300 leading-relaxed opacity-90">Natively takes notes without a meeting bot, provides real-time AI assistance, and automatically generates notes and follow-up emails.</p>
+                                        <h2 className="text-xl font-bold text-white mb-2 tracking-tight">Start Natively and get notes.</h2>
+                                        <p className="text-xs text-slate-300 leading-relaxed opacity-90">Natively takes notes without a meeting bot, provides real-time AI assistance, and automatically generates notes and follow-up emails.</p>
                                     </div>
 
-                                    <button onClick={onStartMeeting} className="w-fit bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-sm text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 group-hover:pl-6 group-hover:pr-4">
+                                    <button onClick={onStartMeeting} className="w-fit bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-sm text-white px-4 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-2 group-hover:pl-5 group-hover:pr-3">
                                         Join demo meeting
-                                        <ArrowRight size={14} className="opacity-0 -ml-2 group-hover:ml-0 group-hover:opacity-100 transition-all" />
+                                        <ArrowRight size={12} className="opacity-0 -ml-2 group-hover:ml-0 group-hover:opacity-100 transition-all" />
                                     </button>
                                 </div>
                             </div>
 
                             {/* Right Secondary Card */}
-                            <div className="md:col-span-1 rounded-[24px] overflow-hidden border border-white/10 bg-[#151515] relative group flex flex-col items-center pt-10 text-center">
+                            <div className="md:col-span-1 rounded-xl overflow-hidden border border-white/10 bg-[#151515] relative group flex flex-col items-center pt-6 text-center">
                                 {/* Backdrop Image */}
                                 <div className="absolute inset-0">
-                                    <img src={calender} alt="" className="w-full h-full object-cover opacity-100 transition-opacity duration-500" />
+                                    <img src={calender} alt="" className="w-full h-full object-cover opacity-100 transition-opacity duration-500 translate-x-1 translate-y-[-2px] scale-110" />
                                 </div>
 
                                 {/* Content Layer (z-10) */}
                                 <div className="relative z-10 w-full flex flex-col items-center">
-                                    <h3 className="text-xl font-semibold text-white leading-tight mb-2">
-                                        Link your calendar to<br />see upcoming events
+                                    <h3 className="text-[19px] leading-tight mb-4">
+                                        <span className="block font-semibold text-[#F4F6FA]">Link your calendar to</span>
+                                        <span className="block font-medium text-[#C9CFDA] text-[0.95em]">see upcoming events</span>
                                     </h3>
 
-                                    <button className="bg-[#0A0A0A] hover:bg-[#151515] border border-white/10 text-white pl-4 pr-5 py-2.5 rounded-full text-sm font-medium transition-all hover:scale-105 hover:shadow-lg flex items-center gap-2.5 group/btn shadow-sm">
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="brightness-200 contrast-0 grayscale">
-                                            <path d="M23.52 12.212c0-.848-.076-1.654-.216-2.428H12v4.594h6.473c-.28 1.503-1.12 2.775-2.38 3.619v3.01h3.84c2.247-2.07 3.54-5.118 3.54-8.795z" fill="#4285F4" />
-                                            <path d="M12 24c3.24 0 5.957-1.074 7.942-2.906l-3.84-3.01c-1.078.722-2.454 1.15-4.102 1.15-3.124 0-5.77-2.112-6.72-4.954H1.322v3.106C3.38 21.442 7.378 24 12 24z" fill="#34A853" />
-                                            <path d="M5.28 14.28A7.276 7.276 0 0 1 4.908 12c0-.8.14-1.57.387-2.28V6.613H1.322A11.968 11.968 0 0 0 0 12c0 1.943.468 3.774 1.322 5.387l3.96-3.107z" fill="#FBBC05" />
-                                            <path d="M12 4.75c1.764 0 3.345.607 4.588 1.795l3.433-3.434C17.95 1.258 15.234 0 12 0 7.378 0 3.378 2.558 1.322 6.613l3.957 3.107c.95-2.842 3.595-4.97 6.72-4.97z" fill="#EA4335" />
-                                        </svg>
-                                        Connect calendar
-                                        <ArrowRight size={14} className="text-slate-400 group-hover/btn:translate-x-0.5 transition-transform" />
-                                    </button>
+                                    <ConnectCalendarButton className="-translate-x-0.5" />
                                 </div>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                {/* BOTTOM SECTION: Black Background */}
-                <section className="bg-black px-8 py-8 flex-1">
+                {/* BOTTOM SECTION: Black Background (Scrollable) */}
+                <section className="bg-black px-8 py-8 flex-1 overflow-y-auto">
                     <div className="max-w-5xl mx-auto space-y-8">
 
                         {/* Group: Today (Mock) */}
