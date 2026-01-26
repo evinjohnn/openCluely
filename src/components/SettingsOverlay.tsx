@@ -3,8 +3,9 @@ import {
     X, Mic, Speaker, Monitor, Keyboard, User, LifeBuoy, LogOut,
     Command, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
     AppWindow, Camera, RotateCcw, Eye, Layout, MessageSquare, Crop,
-    ChevronDown, Check, BadgeCheck
+    ChevronDown, Check, BadgeCheck, Power, Palette
 } from 'lucide-react';
+import { useTheme } from './ThemeContext';
 
 interface CustomSelectProps {
     label: string;
@@ -80,6 +81,7 @@ interface SettingsOverlayProps {
 }
 
 const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) => {
+    const { theme, setTheme } = useTheme();
     const [activeTab, setActiveTab] = useState('general');
     const [isUndetectable, setIsUndetectable] = useState(false);
     const [openOnLogin, setOpenOnLogin] = useState(false);
@@ -115,6 +117,9 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
             // Load detectable status
             if (window.electronAPI?.getUndetectable) {
                 window.electronAPI.getUndetectable().then(setIsUndetectable);
+            }
+            if (window.electronAPI?.getOpenAtLogin) {
+                window.electronAPI.getOpenAtLogin().then(setOpenOnLogin);
             }
 
             // Load settings
@@ -287,7 +292,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                         <Eye size={18} className="text-white" />
                                         <h3 className="text-base font-bold text-white">Detectable</h3>
                                     </div>
-                                    <p className="text-sm text-gray-400">
+                                    <p className="text-xs text-gray-400">
                                         Cluely is currently {isUndetectable ? 'undetectable' : 'detectable'} by screen-sharing. <button className="text-blue-400 hover:underline">Supported apps here</button>
                                     </p>
                                 </div>
@@ -303,79 +308,117 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                 </div>
                             </div>
 
-                            <div className="h-px bg-white/5" />
+                            <div className="pt-2">
+                                <h3 className="text-sm font-bold text-white mb-1">General settings</h3>
+                                <p className="text-xs text-gray-500 mb-4">Customize how Cluely works for you</p>
 
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h3 className="text-base font-medium text-white">Open at Login</h3>
-                                    <p className="text-sm text-gray-400 mt-1">Automatically launch Cluely when you start your computer.</p>
-                                </div>
-                                <div
-                                    onClick={() => setOpenOnLogin(!openOnLogin)}
-                                    className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors ${!openOnLogin ? 'bg-white/10' : 'bg-blue-600'}`}
-                                >
-                                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${!openOnLogin ? 'translate-x-0' : 'translate-x-5'}`} />
-                                </div>
-                            </div>
-
-                            <div className="h-px bg-white/5" />
-
-                            <div>
-                                <h3 className="text-base font-medium text-white mb-4">API Configuration</h3>
-                                <div className="bg-[#262626] rounded-xl p-5 border border-white/5">
-                                    <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Gemini API Key</label>
-                                    <div className="flex gap-3">
-                                        <input
-                                            type="password"
-                                            value={apiKey}
-                                            onChange={(e) => setApiKey(e.target.value)}
-                                            placeholder="AIzaSy..."
-                                            className="flex-1 bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors"
-                                        />
-                                        <button className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors">
-                                            Save
-                                        </button>
-                                    </div>
-                                    <p className="text-xs text-gray-500 mt-2">Required for intelligence features.</p>
-                                </div>
-                            </div>
-
-                            <div className="h-px bg-white/5" />
-
-                            <div>
-                                <h3 className="text-base font-medium text-white mb-4">Service Account Location</h3>
-                                <div className="bg-[#262626] rounded-xl p-5 border border-white/5">
-                                    <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Google Cloud Service Account JSON</label>
-                                    <div className="flex gap-3">
-                                        <div className="flex-1 bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-gray-400 truncate flex items-center">
-                                            {serviceAccountPath || "No file selected"}
+                                <div className="space-y-4">
+                                    {/* Open at Login */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 bg-[#262626] rounded-lg border border-white/5 flex items-center justify-center text-gray-400">
+                                                <Power size={20} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-bold text-white">Open Cluely when you log in</h3>
+                                                <p className="text-xs text-gray-400 mt-0.5">Cluely will open automatically when you log in to your computer</p>
+                                            </div>
                                         </div>
-                                        <button
-                                            onClick={handleSelectServiceAccount}
-                                            className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                                        <div
+                                            onClick={() => {
+                                                const newState = !openOnLogin;
+                                                setOpenOnLogin(newState);
+                                                window.electronAPI?.setOpenAtLogin(newState);
+                                            }}
+                                            className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors ${!openOnLogin ? 'bg-white/10' : 'bg-white'}`}
                                         >
-                                            Select File
+                                            <div className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-transform ${!openOnLogin ? 'translate-x-0 bg-white' : 'translate-x-5 bg-black'}`} />
+                                        </div>
+                                    </div>
+
+                                    {/* Theme (Mock) */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 bg-[#262626] rounded-lg border border-white/5 flex items-center justify-center text-gray-400">
+                                                <Palette size={20} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-bold text-white">Theme</h3>
+                                                <p className="text-xs text-gray-400 mt-0.5">Customize how Cluely looks on your device</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            {(['system', 'dark', 'light'] as const).map((t) => (
+                                                <button
+                                                    key={t}
+                                                    onClick={() => setTheme(t)}
+                                                    className={`
+                                                        px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalized
+                                                        ${theme === t
+                                                            ? 'bg-white text-black'
+                                                            : 'bg-[#262626] text-gray-400 hover:text-white hover:bg-white/5 border border-white/10'}
+                                                    `}
+                                                >
+                                                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Version */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 bg-[#262626] rounded-lg border border-white/5 flex items-center justify-center text-gray-400">
+                                                <BadgeCheck size={20} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-sm font-bold text-white">Version</h3>
+                                                <p className="text-xs text-gray-400 mt-0.5">You are currently using Cluely version 1.0.0</p>
+                                            </div>
+                                        </div>
+                                        <button className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                                            Check for updates
                                         </button>
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-2">Used for native audio transcription (service-account.json).</p>
                                 </div>
                             </div>
 
                             <div className="h-px bg-white/5" />
 
-                            <div className="flex items-center justify-between pb-4">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-10 h-10 bg-[#262626] rounded-lg border border-white/5 flex items-center justify-center text-gray-400">
-                                        <BadgeCheck size={20} />
+                            <div>
+                                <h3 className="text-sm font-bold text-white mb-4">Advanced API</h3>
+                                <div className="space-y-4">
+                                    <div className="bg-[#262626] rounded-xl p-5 border border-white/5">
+                                        <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Gemini API Key</label>
+                                        <div className="flex gap-3">
+                                            <input
+                                                type="password"
+                                                value={apiKey}
+                                                onChange={(e) => setApiKey(e.target.value)}
+                                                placeholder="AIzaSy..."
+                                                className="flex-1 bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                            />
+                                            <button className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-xs font-medium transition-colors">
+                                                Save
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 className="text-base font-bold text-white">Version</h3>
-                                        <p className="text-sm text-gray-400">You are currently using Cluely version 1.0.0</p>
+
+                                    <div className="bg-[#262626] rounded-xl p-5 border border-white/5">
+                                        <label className="block text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Google Cloud Service Account JSON</label>
+                                        <div className="flex gap-3">
+                                            <div className="flex-1 bg-black/50 border border-white/10 rounded-lg px-4 py-2.5 text-xs text-gray-400 truncate flex items-center">
+                                                {serviceAccountPath || "No file selected"}
+                                            </div>
+                                            <button
+                                                onClick={handleSelectServiceAccount}
+                                                className="bg-white/10 hover:bg-white/20 text-white px-5 py-2.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
+                                            >
+                                                Select File
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
-                                <button className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                                    Check for updates
-                                </button>
                             </div>
                         </div>
                     )}

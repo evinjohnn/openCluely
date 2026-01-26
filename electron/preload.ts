@@ -70,6 +70,12 @@ interface ElectronAPI {
   endMeeting: () => Promise<{ success: boolean; error?: string }>
   getRecentMeetings: () => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
 
+  // Calendar Integration
+  calendarConnect: () => Promise<{ success: boolean; error?: string }>
+  calendarDisconnect: () => Promise<{ success: boolean }>
+  getUpcomingMeetings: () => Promise<Array<{ id: string; title: string; startTime: string; endTime: string; link?: string; source: string }>>
+  getCalendarStatus: () => Promise<{ connected: boolean; email?: string }>
+
   // Intelligence Mode Events
   onIntelligenceAssistUpdate: (callback: (data: { insight: string }) => void) => () => void
   onIntelligenceSuggestedAnswer: (callback: (data: { answer: string; question: string; confidence: number }) => void) => () => void
@@ -90,6 +96,7 @@ interface ElectronAPI {
   onGeminiStreamToken: (callback: (token: string) => void) => () => void
   onGeminiStreamDone: (callback: () => void) => () => void
   onGeminiStreamError: (callback: (error: string) => void) => () => void
+  on: (channel: string, callback: (...args: any[]) => void) => () => void
 }
 
 export const PROCESSING_EVENTS = {
@@ -241,6 +248,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openExternal: (url: string) => ipcRenderer.invoke("open-external", url),
   setUndetectable: (state: boolean) => ipcRenderer.invoke("set-undetectable", state),
   getUndetectable: () => ipcRenderer.invoke("get-undetectable"),
+  setOpenAtLogin: (open: boolean) => ipcRenderer.invoke("set-open-at-login", open),
+
+  getOpenAtLogin: () => ipcRenderer.invoke("get-open-at-login"),
+
+  // Theme support
+  setTheme: (theme: 'dark' | 'light' | 'system') => ipcRenderer.invoke("set-theme", theme),
+  getTheme: () => ipcRenderer.invoke("get-theme"),
+  onThemeUpdate: (callback: (theme: 'dark' | 'light') => void) => {
+    const subscription = (_: any, theme: 'dark' | 'light') => callback(theme)
+    ipcRenderer.on("theme-updated", subscription)
+    return () => {
+      ipcRenderer.removeListener("theme-updated", subscription)
+    }
+  },
 
   onSettingsVisibilityChange: (callback: (isVisible: boolean) => void) => {
     const subscription = (_: any, isVisible: boolean) => callback(isVisible)
@@ -335,6 +356,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   startMeeting: () => ipcRenderer.invoke("start-meeting"),
   endMeeting: () => ipcRenderer.invoke("end-meeting"),
   getRecentMeetings: () => ipcRenderer.invoke("get-recent-meetings"),
+
+  // Calendar Integration
+  calendarConnect: () => ipcRenderer.invoke("calendar-connect"),
+  calendarDisconnect: () => ipcRenderer.invoke("calendar-disconnect"),
+  getUpcomingMeetings: () => ipcRenderer.invoke("calendar-get-upcoming"),
+  getCalendarStatus: () => ipcRenderer.invoke("calendar-status"),
 
   // Window Mode
   setWindowMode: (mode: 'launcher' | 'overlay') => ipcRenderer.invoke("set-window-mode", mode),
@@ -460,6 +487,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     }
   },
 
-  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args)
+  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+
+  on: (channel: string, callback: (...args: any[]) => void) => {
+    const subscription = (_: any, ...args: any[]) => callback(...args)
+    ipcRenderer.on(channel, subscription)
+    return () => {
+      ipcRenderer.removeListener(channel, subscription)
+    }
+  }
 } as ElectronAPI)
 

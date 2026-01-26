@@ -6,6 +6,14 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'CelebMFLight';
+  src: url('./font/Masterfont - Celeb MF Light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -13,7 +21,93 @@
 :root {
   /* System Fonts - SF Pro */
   --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+
+  /* ---------------------------------------------------- */
+  /* COLOR SYSTEM - SEMANTIC TOKENS                       */
+  /* ---------------------------------------------------- */
+
+  /* DEFAULT: DARK MODE (Source of Truth) */
+  --bg-primary: #050505;
+  /* Main app background */
+  --bg-secondary: #000000;
+  /* List backgrounds, deeply recessed */
+  --bg-tertiary: #121212;
+  /* Headers, Inputs */
+  --bg-elevated: #1A1A1A;
+  /* Cards, Hovers, Pills */
+  --bg-surface: #151515;
+  /* Hero sections */
+  --bg-highlight: #2C2C2C;
+  /* Badges, Tags */
+  --bg-overlay: rgba(18, 18, 18, 0.95);
+  /* Modal/Overlay Background */
+
+  --text-primary: #FFFFFF;
+  /* pure white */
+  --text-secondary: #E2E8F0;
+  /* slate-200 */
+  --text-tertiary: #94A3B8;
+  /* slate-400/500 mix */
+  --text-quaternary: #64748B;
+  /* slate-500/600 mix */
+  --text-muted: #475569;
+  /* slate-600 */
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-muted: rgba(255, 255, 255, 0.12);
+  --border-focus: rgba(255, 255, 255, 0.2);
+
+  --accent-primary: #2563EB;
+  /* blue-600 */
+  --accent-secondary: #3B82F6;
+  /* blue-500 */
+  --accent-tertiary: #60A5FA;
+  /* blue-400 */
+  --accent-blue-bubble: #0A84FF;
 }
+
+/* LIGHT MODE - Manual Design (Not Auto-Inverted) */
+[data-theme='light'] {
+  /* Backgrounds: Calm, Off-White, Premium */
+  --bg-primary: #FAFAFA;
+  /* Neutral 50 - Warm/Calm main bg */
+  --bg-secondary: #FFFFFF;
+  /* Pure white for content/lists to pop */
+  --bg-tertiary: #F1F5F9;
+  /* Headers/Inputs (slate-100) */
+  --bg-elevated: #FFFFFF;
+  /* Cards (rely on shadow in light mode) */
+  --bg-surface: #F8FAFC;
+  /* Hero sections (slate-50) */
+  --bg-highlight: #E2E8F0;
+  /* Badges (slate-200) */
+  --bg-overlay: rgba(255, 255, 255, 0.95);
+
+  /* Text: Charcoal/Deep Slate - never pure black */
+  --text-primary: #1E293B;
+  /* slate-800 */
+  --text-secondary: #475569;
+  /* slate-600 */
+  --text-tertiary: #64748B;
+  /* slate-500 */
+  --text-quaternary: #94A3B8;
+  /* slate-400 */
+  --text-muted: #CBD5E1;
+  /* slate-300 */
+
+  /* Borders: Very subtle in light mode */
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-muted: rgba(0, 0, 0, 0.12);
+  --border-focus: rgba(0, 0, 0, 0.15);
+
+  /* Accents: Adjusted for light mode contrast if needed */
+  --accent-primary: #2563EB;
+  --accent-secondary: #3B82F6;
+  --accent-tertiary: #3B82F6;
+  /* Darker blue for visibility on light bg */
+  --accent-blue-bubble: #007AFF;
+}
+
 
 /* App sizing baseline (required for h-full / flex scroll areas) */
 html,

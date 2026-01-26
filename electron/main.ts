@@ -45,6 +45,8 @@ import { NativeServiceManager } from "./NativeServiceManager"
 import { IntelligenceManager } from "./IntelligenceManager"
 import { SystemAudioCapture } from "./audio/SystemAudioCapture"
 import { GoogleSTT } from "./audio/GoogleSTT"
+import { ThemeManager } from "./ThemeManager"
+import { CalendarService } from "./services/CalendarService"
 
 export class AppState {
   private static instance: AppState | null = null
@@ -56,7 +58,10 @@ export class AppState {
   public processingHelper: ProcessingHelper
   private nativeAudioClient: NativeAudioClient
   private nativeServiceManager: NativeServiceManager
+
   private intelligenceManager: IntelligenceManager
+  private themeManager: ThemeManager
+  private calendarService: CalendarService
   private tray: Tray | null = null
 
   // View management
@@ -113,11 +118,26 @@ export class AppState {
 
     // Initialize IntelligenceManager with LLMHelper
     this.intelligenceManager = new IntelligenceManager(this.processingHelper.getLLMHelper())
+
+    // Initialize ThemeManager
+    this.themeManager = new ThemeManager()
+
+    // Initialize Calendar Service
+    this.calendarService = new CalendarService()
+
     this.setupNativeAudioEvents()
     this.setupIntelligenceEvents()
 
     // --- NEW SYSTEM AUDIO PIPELINE (SOX + NODE GOOGLE STT) ---
     this.setupSystemAudioPipeline()
+  }
+
+  public getThemeManager(): ThemeManager {
+    return this.themeManager;
+  }
+
+  public getCalendarService(): CalendarService {
+    return this.calendarService;
   }
 
   // New Property for System Audio
@@ -217,9 +237,8 @@ export class AppState {
     this.systemAudioCapture?.stop();
     this.googleSTT?.stop();
 
-    // 4. Reset Intelligence Context?
-    // this.intelligenceManager.reset(); 
-    // Maybe we want to keep it for the summary view? Prompt says: "The meeting transcript and notes are finalized and saved locally."
+    // 4. Reset Intelligence Context & Save
+    await this.intelligenceManager.stopMeeting();
   }
 
   private setupIntelligenceEvents(): void {
@@ -697,12 +716,7 @@ async function initializeApp() {
     }
   })
 
-  app.on('will-quit', async (e) => {
-    // Open the transcript file before quitting
-    // Note: This is fire-and-forget since will-quit doesn't support async wait well without preventDefault
-    // But openPath is usually fast enough or hands off to OS
-    AppState.getInstance().getIntelligenceManager().openTranscriptFile();
-  });
+
 
   // app.dock?.hide() // REMOVED: User wants Dock icon visible
   app.commandLine.appendSwitch("disable-background-timer-throttling")

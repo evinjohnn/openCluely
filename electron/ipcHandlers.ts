@@ -1,8 +1,11 @@
 // ipcHandlers.ts
 
-import { app, ipcMain, shell, dialog } from "electron"
+import { app, ipcMain, shell, dialog, desktopCapturer, systemPreferences, BrowserWindow, screen } from "electron"
 import { AppState } from "./main"
 import { GEMINI_FLASH_MODEL, GEMINI_PRO_MODEL } from "./IntelligenceManager"
+import { DatabaseManager } from "./db/DatabaseManager"; // Import Database Manager
+import * as path from "path";
+import * as fs from "fs";
 
 export function initializeIpcHandlers(appState: AppState): void {
   ipcMain.handle(
@@ -121,7 +124,7 @@ export function initializeIpcHandlers(appState: AppState): void {
     try {
       const result = await appState.processingHelper.getLLMHelper().chatWithGemini(message, imagePath, context, options?.skipSystemPrompt);
 
-      console.log(`[IPC] gemini-chat response:`, result ? result.substring(0, 50) : "(empty)");
+      console.log(`[IPC] gemini - chat response: `, result ? result.substring(0, 50) : "(empty)");
 
       // Don't process empty responses
       if (!result || result.trim().length === 0) {
@@ -145,7 +148,7 @@ export function initializeIpcHandlers(appState: AppState): void {
       // 2. Add assistant response and set as last message
       console.log(`[IPC] Updating IntelligenceManager with assistant message...`);
       intelligenceManager.addAssistantMessage(result);
-      console.log(`[IPC] Updated IntelligenceManager. Last message:`, intelligenceManager.getLastAssistantMessage()?.substring(0, 50));
+      console.log(`[IPC] Updated IntelligenceManager.Last message: `, intelligenceManager.getLastAssistantMessage()?.substring(0, 50));
 
       return result;
     } catch (error: any) {
@@ -249,6 +252,29 @@ export function initializeIpcHandlers(appState: AppState): void {
   ipcMain.handle("get-undetectable", async () => {
     return appState.getUndetectable()
   })
+
+  ipcMain.handle("set-open-at-login", async (_, openAtLogin: boolean) => {
+    app.setLoginItemSettings({
+      openAtLogin,
+      openAsHidden: false
+    });
+    return { success: true };
+  });
+
+  ipcMain.handle("get-open-at-login", async () => {
+    const settings = app.getLoginItemSettings();
+    return settings.openAtLogin;
+  });
+
+  // Theme support
+  ipcMain.handle("set-theme", async (_, theme: 'dark' | 'light' | 'system') => {
+    appState.getThemeManager().setTheme(theme);
+    return { success: true };
+  });
+
+  ipcMain.handle("get-theme", async () => {
+    return appState.getThemeManager().getTheme();
+  });
 
   // LLM Model Management Handlers
   ipcMain.handle("get-current-llm-config", async () => {
@@ -372,12 +398,42 @@ export function initializeIpcHandlers(appState: AppState): void {
   });
 
   ipcMain.handle("get-recent-meetings", async () => {
-    // Mock data for now
-    return [
-      { id: '1', title: 'Cluely Demo with CEO Roy Lee', date: 'Today at 7:30am', duration: '4:48', summary: 'Discussed roadmap...' },
-      { id: '2', title: 'Casual Conversation with AI', date: 'Wed, Jan 21 at 4:32am', duration: '2:21', summary: ' AI ethics...' },
-      { id: '3', title: 'Untitled session', date: 'Wed, Jan 21 at 2:05am', duration: '0:25', summary: 'Quick test...' },
-    ];
+    // Fetch from SQLite (limit 50)
+    return DatabaseManager.getInstance().getRecentMeetings(50);
+  });
+
+  ipcMain.handle("get-meeting-details", async (event, id) => {
+    // Helper to fetch full details
+    return DatabaseManager.getInstance().getMeetingDetails(id);
+  });
+
+  ipcMain.handle("seed-demo", async () => {
+    DatabaseManager.getInstance().seedDemoMeeting();
+    return { success: true };
+  });
+
+  // Calendar Integration
+  ipcMain.handle("calendar-connect", async () => {
+    try {
+      await appState.getCalendarService().connect();
+      return { success: true };
+    } catch (e: any) {
+      console.error("Calendar connect error:", e);
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle("calendar-disconnect", async () => {
+    appState.getCalendarService().disconnect();
+    return { success: true };
+  });
+
+  ipcMain.handle("calendar-get-upcoming", async () => {
+    return appState.getCalendarService().getUpcomingMeetings();
+  });
+
+  ipcMain.handle("calendar-status", async () => {
+    return appState.getCalendarService().getStatus();
   });
 
   ipcMain.handle("open-external", async (event, url: string) => {

@@ -31,6 +31,15 @@ export interface ElectronAPI {
   hideWindow: () => Promise<void>
   setUndetectable: (state: boolean) => Promise<{ success: boolean; error?: string }>
   getUndetectable: () => Promise<boolean>
+  setOpenAtLogin: (open: boolean) => Promise<{ success: boolean; error?: string }>
+  getOpenAtLogin: () => Promise<boolean>
+
+
+  // Theme support
+  setTheme: (theme: 'dark' | 'light' | 'system') => Promise<{ success: boolean; error?: string }>
+  getTheme: () => Promise<'dark' | 'light' | 'system'>
+  onThemeUpdate: (callback: (theme: 'dark' | 'light') => void) => () => void
+
   onSettingsVisibilityChange: (callback: (isVisible: boolean) => void) => () => void
   toggleSettingsWindow: (coords?: { x: number; y: number }) => Promise<void>
   closeSettingsWindow: () => Promise<void>

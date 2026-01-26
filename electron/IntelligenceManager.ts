@@ -6,10 +6,11 @@ import { EventEmitter } from 'events';
 import { TranscriptSegment, SuggestionTrigger } from './NativeAudioClient';
 import { LLMHelper } from './LLMHelper';
 import { AnswerLLM, AssistLLM, FollowUpLLM, RecapLLM, FollowUpQuestionsLLM, WhatToAnswerLLM, prepareTranscriptForWhatToAnswer } from './llm';
-import * as fs from 'fs';
-import * as path from 'path';
-import { app, shell } from 'electron';
-import * as os from 'os';
+import { desktopCapturer } from 'electron';
+import { DatabaseManager, Meeting } from './db/DatabaseManager';
+const crypto = require('crypto');
+import { app } from 'electron';
+
 
 export const GEMINI_FLASH_MODEL = "gemini-3-flash-preview";
 export const GEMINI_PRO_MODEL = "gemini-3-pro-preview";
@@ -105,60 +106,16 @@ export class IntelligenceManager extends EventEmitter {
     private readonly triggerCooldown: number = 3000; // 3 seconds
     private currentModel: string = GEMINI_FLASH_MODEL;
 
-    // Transcript logging
-    private transcriptPath: string;
+
 
     constructor(llmHelper: LLMHelper) {
         super();
         this.llmHelper = llmHelper;
         this.initializeModeLLMs();
 
-        // Initialize transcript file in Documents folder for better visibility
-        try {
-            const documentsPath = app.getPath('documents');
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            this.transcriptPath = path.join(documentsPath, `natively_transcript_${timestamp}.txt`);
-        } catch (err) {
-            console.error('[IntelligenceManager] Failed to get Documents path, falling back to temp:', err);
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            this.transcriptPath = path.join(os.tmpdir(), `natively_transcript_${timestamp}.txt`);
-        }
-
-        this.initializeTranscriptFile();
     }
 
-    private initializeTranscriptFile(): void {
-        const header = `Natively Session Transcript - ${new Date().toLocaleString()}\n----------------------------------------\n\n`;
-        try {
-            fs.writeFileSync(this.transcriptPath, header, 'utf8');
-            console.log(`[IntelligenceManager] Transcript log created at: ${this.transcriptPath}`);
-        } catch (err) {
-            console.error(`[IntelligenceManager] Failed to create transcript log at ${this.transcriptPath}:`, err);
-        }
-    }
 
-    private appendToLog(role: string, text: string): void {
-        const time = new Date().toLocaleTimeString();
-        const entry = `[${time}] ${role.toUpperCase()}: ${text}\n\n`;
-        try {
-            fs.appendFileSync(this.transcriptPath, entry, 'utf8');
-            console.log(`[IntelligenceManager] Appended to log: ${text.substring(0, 30)}...`);
-        } catch (err) {
-            console.warn(`[IntelligenceManager] Failed to write to transcript log:`, err);
-        }
-    }
-
-    /**
-     * Open the transcript file in default text editor
-     */
-    public async openTranscriptFile(): Promise<void> {
-        try {
-            await shell.openPath(this.transcriptPath);
-            console.log(`[IntelligenceManager] Opened transcript file`);
-        } catch (err) {
-            console.error(`[IntelligenceManager] Failed to open transcript file:`, err);
-        }
-    }
 
     /**
      * Initialize mode-specific LLMs with shared Gemini client
@@ -227,7 +184,9 @@ export class IntelligenceManager extends EventEmitter {
             text.startsWith("CONTEXT:");
 
         if (!isInternalPrompt) {
-            this.appendToLog(role === 'user' ? 'USER' : 'INTERVIEWER', text);
+
+            // Add to session transcript
+            this.fullTranscript.push(segment);
         }
 
         // Check for follow-up intent if user is speaking
@@ -460,6 +419,15 @@ export class IntelligenceManager extends EventEmitter {
 
             // Store in context (WhatToAnswerLLM never returns empty)
             this.addAssistantMessage(fullAnswer);
+
+            // Log Usage
+            this.fullUsage.push({
+                type: 'assist',
+                timestamp: Date.now(),
+                question: question || 'inferred',
+                answer: fullAnswer
+            });
+
             // Emit completion event (legacy consumers + done signal)
             this.emit('suggested_answer', fullAnswer, question || 'inferred from context', confidence);
 
@@ -604,6 +572,11 @@ export class IntelligenceManager extends EventEmitter {
 
             if (fullQuestions) {
                 this.emit('follow_up_questions_update', fullQuestions);
+                this.fullUsage.push({
+                    type: 'followup_questions',
+                    timestamp: Date.now(),
+                    answer: fullQuestions
+                });
             }
             this.setMode('idle');
             return fullQuestions;
@@ -637,6 +610,13 @@ export class IntelligenceManager extends EventEmitter {
                 // Store in context
                 this.addAssistantMessage(answer);
                 this.emit('manual_answer_result', answer, question);
+
+                this.fullUsage.push({
+                    type: 'chat',
+                    timestamp: Date.now(),
+                    question: question,
+                    answer: answer
+                });
             }
 
             this.setMode('idle');
@@ -688,11 +668,141 @@ export class IntelligenceManager extends EventEmitter {
         return this.activeMode;
     }
 
+    // Full Session Tracking (Persisted)
+    private fullTranscript: TranscriptSegment[] = [];
+    private fullUsage: any[] = []; // UsageInteraction
+    private sessionStartTime: number = Date.now();
+
+    /**
+     * Save the current session to persistent storage
+     */
+    /**
+     * Stops the meeting immediately, snapshots data, and triggers background processing.
+     * Returns immediately so UI can switch.
+     */
+    public async stopMeeting(): Promise<void> {
+        console.log('[IntelligenceManager] Stopping meeting and queueing save...');
+
+        // 1. Snapshot valid data BEFORE resetting
+        const durationMs = Date.now() - this.sessionStartTime;
+        if (durationMs < 1000) {
+            console.log("Meeting too short, ignoring.");
+            this.reset();
+            return;
+        }
+
+        const snapshot = {
+            transcript: [...this.fullTranscript],
+            usage: [...this.fullUsage],
+            startTime: this.sessionStartTime,
+            durationMs: durationMs,
+            context: this.getFormattedContext(600) // Capture context now while state matches
+        };
+
+        // 2. Reset state immediately so new meeting can start or UI is clean
+        this.reset();
+
+        const meetingId = crypto.randomUUID();
+        this.processAndSaveMeeting(snapshot, meetingId).catch(err => {
+            console.error('[IntelligenceManager] Background processing failed:', err);
+        });
+
+        // 4. Initial Save (Placeholder)
+        const minutes = Math.floor(durationMs / 60000);
+        const seconds = ((durationMs % 60000) / 1000).toFixed(0);
+        const durationStr = `${minutes}:${Number(seconds) < 10 ? '0' : ''}${seconds}`;
+
+        const placeholder: Meeting = {
+            id: meetingId,
+            title: "Processing...",
+            date: new Date().toISOString(),
+            duration: durationStr,
+            summary: "Generating summary...",
+            detailedSummary: { actionItems: [], keyPoints: [] },
+            transcript: snapshot.transcript,
+            usage: snapshot.usage
+        };
+
+        try {
+            DatabaseManager.getInstance().saveMeeting(placeholder, snapshot.startTime, durationMs);
+            // Notify Frontend
+            const wins = require('electron').BrowserWindow.getAllWindows();
+            wins.forEach((w: any) => w.webContents.send('meetings-updated'));
+        } catch (e) {
+            console.error("Failed to save placeholder", e);
+        }
+    }
+
+    /**
+     * Heavy lifting: LLM Title, Summary, and DB Write
+     */
+    private async processAndSaveMeeting(data: { transcript: TranscriptSegment[], usage: any[], startTime: number, durationMs: number, context: string }, meetingId: string): Promise<void> {
+        let title = "Untitled Session";
+        let summaryData: { actionItems: string[], keyPoints: string[] } = { actionItems: [], keyPoints: [] };
+
+        try {
+            // Generate Title
+            if (this.recapLLM) {
+                const titlePrompt = `Generate a concise 3-6 word title for this meeting context. Output ONLY the title text. Do not use quotes or conversational filler. Context:\n${data.context.substring(0, 5000)}`;
+                const generatedTitle = await this.llmHelper.chatWithGemini(titlePrompt, undefined, undefined, true);
+                if (generatedTitle) title = generatedTitle.replace(/["*]/g, '').trim();
+
+                // Generate Structured Summary
+                const summaryPrompt = `Summarize this meeting into JSON format with 'actionItems' (array of strings) and 'keyPoints' (array of strings). Context:\n${data.context.substring(0, 10000)}`;
+                const generatedSummary = await this.llmHelper.chatWithGemini(summaryPrompt, undefined, undefined, true);
+
+                if (generatedSummary) {
+                    const jsonMatch = generatedSummary.match(/```json\n([\s\S]*?)\n```/) || [null, generatedSummary];
+                    const jsonStr = jsonMatch[1] || generatedSummary;
+                    try {
+                        summaryData = JSON.parse(jsonStr);
+                    } catch (e) { console.error("Failed to parse summary JSON", e); }
+                }
+            }
+        } catch (e) {
+            console.error("Error generating meeting metadata", e);
+        }
+
+        try {
+            // Prepare Meeting Object
+            // meetingId is passed in now!
+            const minutes = Math.floor(data.durationMs / 60000);
+            const seconds = ((data.durationMs % 60000) / 1000).toFixed(0);
+            const durationStr = `${minutes}:${Number(seconds) < 10 ? '0' : ''}${seconds}`;
+
+            const meetingData: Meeting = {
+                id: meetingId,
+                title: title,
+                date: new Date().toISOString(), // This will use current time of completion, maybe usage start time is better? 
+                // Actually, using completion time updates the sort order to top.
+                // But let's respect original date. Ideally we pass date in data.
+                // For now, new Date() is fine as it's just a few seconds difference.
+                duration: durationStr,
+                summary: "See detailed summary",
+                detailedSummary: summaryData,
+                transcript: data.transcript,
+                usage: data.usage
+            };
+
+            // Save to SQLite
+            DatabaseManager.getInstance().saveMeeting(meetingData, data.startTime, data.durationMs);
+
+            // Notify Frontend to refresh list
+            const wins = require('electron').BrowserWindow.getAllWindows();
+            wins.forEach((w: any) => w.webContents.send('meetings-updated'));
+
+        } catch (error) {
+            console.error('[IntelligenceManager] Failed to save meeting:', error);
+        }
+    }
     /**
      * Clear all context and reset state
      */
     reset(): void {
         this.contextItems = [];
+        this.fullTranscript = [];
+        this.fullUsage = [];
+        this.sessionStartTime = Date.now();
         this.lastAssistantMessage = null;
         this.activeMode = 'idle';
         if (this.assistCancellationToken) {

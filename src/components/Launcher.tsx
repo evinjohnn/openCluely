@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ToggleLeft, ToggleRight, Search, Zap, Calendar, ArrowRight, ArrowLeft, MoreHorizontal, Globe, Clock, ChevronRight, Settings, RefreshCw, Eye, Ghost } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Search, Zap, Calendar, ArrowRight, ArrowLeft, MoreHorizontal, Globe, Clock, ChevronRight, Settings, RefreshCw, Eye, EyeOff, Ghost, Plus, Mail, Link, ChevronDown } from 'lucide-react';
 import icon from "./icon.png";
 import mainui from "../UI_comp/mainui.png";
 import calender from "../UI_comp/calender.png";
 import ConnectCalendarButton from './ui/ConnectCalendarButton';
+import MeetingDetails from './MeetingDetails';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Meeting {
     id: string;
@@ -11,6 +13,24 @@ interface Meeting {
     date: string;
     duration: string;
     summary: string;
+    detailedSummary?: {
+        actionItems: string[];
+        keyPoints: string[];
+    };
+    transcript?: Array<{
+        speaker: string;
+        text: string;
+        timestamp: number;
+    }>;
+    usage?: Array<{
+        type: 'assist' | 'followup' | 'chat' | 'followup_questions';
+        timestamp: number;
+        question?: string;
+        answer?: string;
+        items?: string[];
+    }>;
+    active?: boolean; // UI state
+    time?: string; // Optional for compatibility
 }
 
 interface LauncherProps {
@@ -18,17 +38,60 @@ interface LauncherProps {
     onOpenSettings: () => void;
 }
 
+// Helper to format date groups
+const getGroupLabel = (dateStr: string) => {
+    if (dateStr === "Today") return "Today"; // Backward compatibility
+
+    const date = new Date(dateStr);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const checkDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    if (checkDate.getTime() === today.getTime()) return "Today";
+    if (checkDate.getTime() === yesterday.getTime()) return "Yesterday";
+
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+};
+
+// Helper to format time (e.g. 3:14pm)
+const formatTime = (dateStr: string) => {
+    if (dateStr === "Today") return "Just now"; // Legacy
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase();
+};
+
 const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) => {
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [isDetectable, setIsDetectable] = useState(true);
+    const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
 
     useEffect(() => {
         console.log("Launcher mounted");
-        if (window.electronAPI && window.electronAPI.getRecentMeetings) {
-            window.electronAPI.getRecentMeetings().then(setMeetings).catch(err => console.error("Failed to fetch meetings:", err));
-        } else {
-            console.error("electronAPI or getRecentMeetings is missing");
+        // Seed demo data if needed (safe to call always)
+        if (window.electronAPI && window.electronAPI.invoke) {
+            window.electronAPI.invoke('seed-demo').catch(err => console.error("Failed to seed demo:", err));
         }
+
+        const fetchMeetings = () => {
+            if (window.electronAPI && window.electronAPI.getRecentMeetings) {
+                window.electronAPI.getRecentMeetings().then(setMeetings).catch(err => console.error("Failed to fetch meetings:", err));
+            }
+        };
+
+        fetchMeetings();
+
+        // Listen for background updates (e.g. after meeting processing finishes)
+        const removeListener = window.electronAPI.on('meetings-updated', () => {
+            console.log("Received meetings-updated event");
+            fetchMeetings();
+        });
+
+        return () => {
+            if (removeListener) removeListener();
+        };
     }, []);
 
     if (!window.electronAPI) {
@@ -41,112 +104,137 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
         window.electronAPI?.setUndetectable(!newState);
     };
 
-    // Group meetings by date headers (Mock logic for visual match)
-    // In real app, we'd process dates. For now, hardcode structure to match screenshot visuals if data permits,
-    // or just render list clearly. User screenshot shows: "Today", "Wed, Jan 21", "Tue, Jan 20"
+    // Group meetings
+    const groupedMeetings = meetings.reduce((acc, meeting) => {
+        const label = getGroupLabel(meeting.date);
+        if (!acc[label]) acc[label] = [];
+        acc[label].push(meeting);
+        return acc;
+    }, {} as Record<string, Meeting[]>);
+
+    // Group order (Today, Yesterday, then others sorted new to old is implicit via API return order ideally, 
+    // but JS object key order isn't guaranteed. We can use a Map or just known keys.)
+    // Simple sort for keys:
+    const sortedGroups = Object.keys(groupedMeetings).sort((a, b) => {
+        if (a === 'Today') return -1;
+        if (b === 'Today') return 1;
+        if (a === 'Yesterday') return -1;
+        if (b === 'Yesterday') return 1;
+        // Approximation for others: parse date
+        return new Date(b).getTime() - new Date(a).getTime();
+    });
+
 
     return (
-        <div className="h-full w-full flex flex-col bg-[#050505] text-white font-sans overflow-hidden selection:bg-blue-500/30">
-            {/* 1. Header */}
-            {/* 1. Header - Mac-style Traffic Lights area + Back Arrow + Search + Profile */}
-            {/* 1. Header - Clean Mac-style Top Bar */}
-            <header className="h-[40px] shrink-0 flex items-center justify-between pl-0 pr-4 drag-region select-none bg-[#121212] border-b border-white/5">
-                {/* Left: Spacing for Traffic Lights + Back Arrow */}
-                <div className="flex items-center gap-0 no-drag">
-                    <div className="w-[70px]" /> {/* Traffic Light Spacer (14+12+8+12+8+12+4 = ~70 to align button start) */}
-
-                    <button className="text-slate-500 hover:text-white transition-colors p-1 rounded-md hover:bg-white/10">
-                        <ArrowLeft size={16} />
-                    </button>
-                </div>
-
-                {/* Center: Search Bar (Pill Shaped) */}
-                <div className="flex-1 max-w-[340px] mx-4 no-drag">
-                    <div className="relative group">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Search size={13} className="text-slate-500 group-focus-within:text-slate-300 transition-colors" />
+        <AnimatePresence mode="wait">
+            {selectedMeeting ? (
+                <MeetingDetails key="details" meeting={selectedMeeting} onBack={() => setSelectedMeeting(null)} />
+            ) : (
+                <motion.div
+                    key="launcher"
+                    className="h-full w-full flex flex-col bg-bg-primary text-text-primary font-sans overflow-hidden selection:bg-accent-secondary/30"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0 }}
+                >
+                    {/* 1. Header */}
+                    <header className="h-[40px] shrink-0 flex items-center justify-between pl-0 pr-4 drag-region select-none bg-[#121212] border-b border-white/5">
+                        {/* Left: Spacing for Traffic Lights + Back Arrow */}
+                        <div className="flex items-center gap-0 no-drag">
+                            <div className="w-[70px]" /> {/* Traffic Light Spacer */}
+                            <button className="text-slate-500 hover:text-white transition-all duration-300 p-1 hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)] flex items-center justify-center mb-1">
+                                <ArrowLeft size={16} />
+                            </button>
                         </div>
-                        <input
-                            type="text"
-                            className="block w-full pl-9 pr-3 py-1 bg-[#1A1A1A] border border-white/5 rounded-full text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-white/10 focus:bg-[#202020] transition-all"
-                            placeholder="Search or ask anything..."
-                        />
-                    </div>
-                </div>
 
-                {/* Right: Settings Gear Only */}
-                <div className="flex items-center gap-3 no-drag pr-2">
-                    <button
-                        onClick={onOpenSettings}
-                        className="p-2 text-slate-500 hover:text-white transition-colors rounded-full hover:bg-white/10"
-                        title="Settings"
-                    >
-                        <Settings size={18} />
-                    </button>
-                </div>
-            </header>
-
-            {/* Main Area - Fixed Top, Scrollable Bottom */}
-            <main className="flex-1 flex flex-col overflow-hidden">
-
-                {/* TOP SECTION: Grey Background (Fixed) */}
-                <section className="bg-[#151515] px-8 pt-6 pb-8 border-b border-white/5 shrink-0">
-                    <div className="max-w-4xl mx-auto space-y-6">
-                        {/* 1.5. Hero Header (Title + Controls + CTA) */}
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <h1 className="text-3xl font-celeb font-medium text-slate-200 tracking-wide drop-shadow-sm">My Natively</h1>
-
-                                {/* Refresh Button */}
-                                <button className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-full transition-colors">
-                                    <RefreshCw size={18} />
-                                </button>
-
-                                {/* Detectable Toggle Pill */}
-                                <div className="flex items-center gap-3 bg-[#1A1A1A] border border-white/10 rounded-full px-3 py-1.5 min-w-[140px]">
-                                    {isDetectable ? (
-                                        <Ghost
-                                            size={14}
-                                            strokeWidth={2}
-                                            className="text-slate-500 transition-colors"
-                                        />
-                                    ) : (
-                                        <svg
-                                            width="14"
-                                            height="14"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth="2"
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            className="transition-colors"
-                                        >
-                                            <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" fill="white" stroke="white" />
-                                            <path d="M9 10h.01" stroke="black" strokeWidth="2.5" />
-                                            <path d="M15 10h.01" stroke="black" strokeWidth="2.5" />
-                                        </svg>
-                                    )}
-                                    <span className={`text-xs font-medium flex-1 transition-colors ${isDetectable ? 'text-slate-300' : 'text-white'}`}>
-                                        {isDetectable ? "Detectable" : "Undetectable"}
-                                    </span>
-                                    <div
-                                        className={`w-8 h-4 rounded-full relative cursor-pointer transition-colors ${!isDetectable ? 'bg-white' : 'bg-slate-700'}`}
-                                        onClick={toggleDetectable}
-                                    >
-                                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-black transition-all ${!isDetectable ? 'left-[18px]' : 'left-0.5'}`} />
-                                    </div>
+                        {/* Center: Search Bar (Pill Shaped) */}
+                        <div className="flex-1 max-w-[340px] mx-4 no-drag">
+                            <div className="relative group">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <Search size={13} className="text-slate-500 group-focus-within:text-slate-300 transition-colors" />
                                 </div>
+                                <input
+                                    type="text"
+                                    className="block w-full pl-9 pr-3 py-1 bg-[#1A1A1A] border border-white/5 rounded-full text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-white/10 focus:bg-[#202020] transition-all"
+                                    placeholder="Search or ask anything..."
+                                />
                             </div>
+                        </div>
 
-                            {/* Start Natively CTA Pill */}
+                        {/* Right: Actions */}
+                        <div className="flex items-center gap-3 no-drag">
                             <button
-                                onClick={onStartMeeting}
-                                className="
+                                onClick={onOpenSettings}
+                                className="p-2 text-slate-500 hover:text-white transition-all duration-300 hover:drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]"
+                                title="Settings"
+                            >
+                                <Settings size={18} />
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Main Area - Fixed Top, Scrollable Bottom */}
+                    <main className="flex-1 flex flex-col overflow-hidden">
+
+                        {/* TOP SECTION: Grey Background (Fixed) */}
+                        <section className="bg-[#151515] px-8 pt-6 pb-8 border-b border-white/5 shrink-0">
+                            <div className="max-w-4xl mx-auto space-y-6">
+                                {/* 1.5. Hero Header (Title + Controls + CTA) */}
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                        <h1 className="text-3xl font-celeb-light font-medium text-slate-200 tracking-wide drop-shadow-sm">My Natively</h1>
+
+                                        {/* Refresh Button */}
+                                        <button className="p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+                                            <RefreshCw size={18} />
+                                        </button>
+
+                                        {/* Detectable Toggle Pill */}
+                                        <div className="flex items-center gap-3 bg-[#1A1A1A] border border-white/10 rounded-full px-3 py-1.5 min-w-[140px]">
+                                            {isDetectable ? (
+                                                <Ghost
+                                                    size={14}
+                                                    strokeWidth={2}
+                                                    className="text-slate-500 transition-colors"
+                                                />
+                                            ) : (
+                                                <svg
+                                                    width="14"
+                                                    height="14"
+                                                    viewBox="0 0 24 24"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    strokeWidth="2"
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    className="transition-colors"
+                                                >
+                                                    <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" fill="white" stroke="white" />
+                                                    <path d="M9 10h.01" stroke="black" strokeWidth="2.5" />
+                                                    <path d="M15 10h.01" stroke="black" strokeWidth="2.5" />
+                                                </svg>
+                                            )}
+                                            <span className={`text-xs font-medium flex-1 transition-colors ${isDetectable ? 'text-slate-300' : 'text-white'}`}>
+                                                {isDetectable ? "Detectable" : "Undetectable"}
+                                            </span>
+                                            <div
+                                                className={`w-8 h-4 rounded-full relative cursor-pointer transition-colors ${!isDetectable ? 'bg-white' : 'bg-slate-700'}`}
+                                                onClick={toggleDetectable}
+                                            >
+                                                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-black transition-all ${!isDetectable ? 'left-[18px]' : 'left-0.5'}`} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Start Natively CTA Pill */}
+                                    <button
+                                        onClick={onStartMeeting}
+                                        className="
                                     group relative overflow-hidden
                                     bg-gradient-to-b from-sky-400 via-sky-500 to-blue-600
                                     text-white
-                                    pl-5 pr-6 py-2.5
+                                    px-6 py-3
                                     rounded-full
                                     font-celeb font-medium tracking-normal
                                     shadow-[inset_0_1px_1px_rgba(255,255,255,0.7),inset_0_-1px_2px_rgba(0,0,0,0.1),0_2px_10px_rgba(14,165,233,0.4),0_0_0_1px_rgba(255,255,255,0.15)]
@@ -155,128 +243,86 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                     hover:scale-[1.01]
                                     active:scale-[0.99]
                                     transition-all duration-500 ease-out
-                                    flex items-center gap-3
-                                    backdrop-blur-xl
-                                "
-                            >
-                                {/* Top Highlight Band (Curved, Diffused, Floating Light) */}
-                                <div className="absolute inset-x-3 top-0 h-[40%] bg-gradient-to-b from-white/40 to-transparent blur-[2px] rounded-b-lg opacity-80 pointer-events-none" />
+                                        onClick={startMeeting}
+                                        className="group relative overflow-hidden p-6 rounded-2xl bg-bg-elevated border border-border-muted hover:border-accent-primary/50 transition-all duration-300 text-left shadow-sm hover:shadow-md"
+                                    >
+                                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                            <Mic size={80} className="text-accent-primary" />
+                                        </div>
+                                        <div className="relative z-10">
+                                            <div className="w-12 h-12 rounded-xl bg-accent-primary/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+                                                <Mic size={24} className="text-accent-primary" />
+                                            </div>
+                                            <h3 className="text-lg font-semibold text-text-primary mb-1">Start Recording</h3>
+                                            <p className="text-sm text-text-tertiary">Capture audio & screen context</p>
+                                        </div>
+                                    </button>
 
-                                {/* Internal "suspended light" glow */}
-                                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
-
-                                <img src={icon} alt="Logo" className="w-[18px] h-[18px] object-contain brightness-0 invert drop-shadow-[0_1px_2px_rgba(0,0,0,0.1)] opacity-90" />
-                                <span className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.1)] -translate-y-[0.5px] text-[18px]">Start Natively</span>
-                            </button>
-                        </div>
-
-                        {/* 2. Hero Section */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 h-[198px]">
-                            {/* Left Main Card */}
-                            <div className="md:col-span-2 relative group rounded-xl overflow-hidden border border-white/10 bg-[#050505]">
-                                {/* Backdrop Image */}
-                                <div className="absolute inset-0">
-                                    <img src={mainui} alt="" className="w-full h-full object-cover opacity-100 transition-opacity duration-500" />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
-                                </div>
-
-                                {/* Background Accent (Optional additional tint) */}
-                                <div className="absolute inset-0 bg-blue-600/5 mix-blend-overlay opacity-50" />
-
-                                {/* Content */}
-                                <div className="absolute inset-0 p-6 flex flex-col justify-between z-10">
-                                    <div className="max-w-md">
-                                        <h2 className="text-xl font-bold text-white mb-2 tracking-tight">Start Natively and get notes.</h2>
-                                        <p className="text-xs text-slate-300 leading-relaxed opacity-90">Natively takes notes without a meeting bot, provides real-time AI assistance, and automatically generates notes and follow-up emails.</p>
-                                    </div>
-
-                                    <button onClick={onStartMeeting} className="w-fit bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-sm text-white px-4 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-2 group-hover:pl-5 group-hover:pr-3">
-                                        Join demo meeting
-                                        <ArrowRight size={12} className="opacity-0 -ml-2 group-hover:ml-0 group-hover:opacity-100 transition-all" />
+                                    <button className="group relative overflow-hidden p-6 rounded-2xl bg-bg-elevated border border-border-muted hover:border-purple-500/50 transition-all duration-300 text-left shadow-sm hover:shadow-md">
+                                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                            <Sparkles size={80} className="text-purple-500" />
+                                        </div>
+                                        <div className="relative z-10">
+                                            <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+                                                <Sparkles size={24} className="text-purple-500" />
+                                            </div>
+                                            <h3 className="text-lg font-semibold text-text-primary mb-1">AI Insights</h3>
+                                            <p className="text-sm text-text-tertiary">Review previous analysis</p>
+                                        </div>
                                     </button>
                                 </div>
-                            </div>
 
-                            {/* Right Secondary Card */}
-                            <div className="md:col-span-1 rounded-xl overflow-hidden border border-white/10 bg-[#151515] relative group flex flex-col items-center pt-6 text-center">
-                                {/* Backdrop Image */}
-                                <div className="absolute inset-0">
-                                    <img src={calender} alt="" className="w-full h-full object-cover opacity-100 transition-opacity duration-500 translate-x-1 translate-y-[-2px] scale-110" />
-                                </div>
-
-                                {/* Content Layer (z-10) */}
-                                <div className="relative z-10 w-full flex flex-col items-center">
-                                    <h3 className="text-[19px] leading-tight mb-4">
-                                        <span className="block font-semibold text-[#F4F6FA]">Link your calendar to</span>
-                                        <span className="block font-medium text-[#C9CFDA] text-[0.95em]">see upcoming events</span>
-                                    </h3>
-
-                                    <ConnectCalendarButton className="-translate-x-0.5" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                {/* BOTTOM SECTION: Black Background (Scrollable) */}
-                <section className="bg-black px-8 py-8 flex-1 overflow-y-auto">
-                    <div className="max-w-5xl mx-auto space-y-8">
-
-                        {/* Group: Today (Mock) */}
-                        <section>
-                            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 pl-2">Today</h3>
-                            <div className="rounded-2xl border border-white/5 overflow-hidden">
-                                {/* Row 1 */}
-                                {meetings.slice(0, 1).map(m => (
-                                    <div key={m.id} className="group flex items-center justify-between p-4 bg-transparent hover:bg-[#1A1A1A] transition-colors cursor-default border-b border-white/5 last:border-0 h-[64px]">
-                                        <div className="font-medium text-slate-200 group-hover:text-white px-2">{m.title}</div>
-                                        <div className="flex items-center gap-4 text-xs text-slate-500 font-mono px-2">
-                                            <span className="bg-[#1A1A1A] group-hover:bg-[#252525] px-2 py-1 rounded border border-white/5">{m.duration}</span>
-                                            <span className="opacity-70">7:30am</span>
-                                            <MoreHorizontal size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </div>
+                                {/* Recent Meetings List */}
+                                <div className="pt-6">
+                                    <div className="flex items-center justify-between mb-4 px-1">
+                                        <h2 className="text-sm font-semibold text-text-tertiary uppercase tracking-wider">Recent Sessions</h2>
+                                        <button className="text-xs text-accent-primary hover:text-accent-secondary font-medium transition-colors">View All</button>
                                     </div>
-                                ))}
-                                {meetings.length === 0 && <div className="p-4 text-sm text-slate-500 pl-6">No meetings today</div>}
-                            </div>
-                        </section>
 
-                        {/* Group: Wed, Jan 21 (Mock) */}
-                        <section>
-                            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 pl-2">Wed, Jan 21</h3>
-                            <div className="rounded-2xl border border-white/5 overflow-hidden flex flex-col">
-                                {['Casual Conversation with AI', 'Untitled session'].map((title, i) => (
-                                    <div key={i} className={`group flex items-center justify-between p-4 bg-transparent hover:bg-[#1A1A1A] transition-colors cursor-default border-white/5 h-[64px] ${i === 2 ? 'bg-[#151515] hover:bg-[#1A1A1A]' : ''} ${i !== 1 ? 'border-b' : ''}`}>
-                                        <div className="font-medium text-slate-200 group-hover:text-white px-2">{title}</div>
-                                        <div className="flex items-center gap-4 text-xs text-slate-500 font-mono px-2">
-                                            <span className="bg-[#1A1A1A] group-hover:bg-[#252525] px-2 py-1 rounded border border-white/5">2:21</span>
-                                            <span className="opacity-70">4:32am</span>
-                                            <MoreHorizontal size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    <div className="space-y-2">
+                                        {meetings.length === 0 ? (
+                                            <div className="p-8 text-center border border-dashed border-border-muted rounded-2xl bg-bg-surface/50">
+                                                <div className="w-12 h-12 bg-bg-elevated rounded-full flex items-center justify-center mx-auto mb-3">
+                                                    <Archive size={20} className="text-text-quaternary" />
+                                                </div>
+                                                <p className="text-text-tertiary text-sm">No recent meetings found</p>
+                                            </div>
+                                        ) : (
+                                            meetings.map((m, i) => (
+                                                <motion.div
+                                                    key={m.id}
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    transition={{ delay: 0.1 * i }}
+                                                    className="group flex items-center justify-between p-4 bg-bg-surface hover:bg-bg-elevated transition-colors cursor-pointer border-b border-border-subtle last:border-0 h-[64px] rounded-lg hover:shadow-sm"
+                                                    onClick={() => setSelectedMeeting(m)}
+                                                >
+                                                    <div className={`font-medium text-[15px] max-w-[60%] truncate ${m.title === 'Processing...' ? 'text-accent-tertiary italic animate-pulse' : (m.title.includes('Demo') ? 'text-text-primary' : 'text-text-secondary group-hover:text-text-primary')}`}>
+                                                        {m.title}
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        {m.title === 'Processing...' ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <RefreshCw size={12} className="animate-spin text-accent-primary" />
+                                                                <span className="text-xs text-accent-primary font-medium">Finalizing...</span>
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <span className="bg-bg-highlight text-text-tertiary text-xs px-2 py-0.5 rounded-[4px] font-medium min-w-[40px] text-center">
+                                                                    {m.duration.replace('min', '').trim()}
+                                                                </span>
+                                                                <span className="text-xs text-text-quaternary font-medium min-w-[60px] text-right">
+                                                                    {formatTime(m.date)}
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </motion.div>
                         </section>
-
-                        {/* Group: Tue, Jan 20 (Mock) */}
-                        <section>
-                            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 pl-2">Tue, Jan 20</h3>
-                            <div className="rounded-2xl border border-white/5 overflow-hidden">
-                                <div className="group flex items-center justify-between p-4 bg-transparent hover:bg-[#1A1A1A] transition-colors cursor-default h-[64px]">
-                                    <div className="font-medium text-slate-200 group-hover:text-white px-2">Internship Live External Quantities</div>
-                                    <div className="flex items-center gap-4 text-xs text-slate-500 font-mono px-2">
-                                        <span className="bg-[#1A1A1A] group-hover:bg-[#252525] px-2 py-1 rounded border border-white/5">41:03</span>
-                                        <span className="opacity-70">2:58pm</span>
-                                        <MoreHorizontal size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
-
-                    </div>
-                </section>
-            </main>
-        </div>
+                    </main>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 };
 

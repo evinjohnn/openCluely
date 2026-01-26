@@ -6,7 +6,37 @@ module.exports = {
     extend: {
       fontFamily: {
         sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica", "Arial", "sans-serif"],
-        celeb: ["CelebMF", "sans-serif"]
+        celeb: ["CelebMF", "sans-serif"],
+        "celeb-light": ["CelebMFLight", "sans-serif"]
+      },
+      colors: {
+        bg: {
+          primary: 'var(--bg-primary)',
+          secondary: 'var(--bg-secondary)',
+          tertiary: 'var(--bg-tertiary)',
+          elevated: 'var(--bg-elevated)',
+          surface: 'var(--bg-surface)',
+          highlight: 'var(--bg-highlight)',
+          overlay: 'var(--bg-overlay)'
+        },
+        text: {
+          primary: 'var(--text-primary)',
+          secondary: 'var(--text-secondary)',
+          tertiary: 'var(--text-tertiary)',
+          quaternary: 'var(--text-quaternary)',
+          muted: 'var(--text-muted)'
+        },
+        border: {
+          subtle: 'var(--border-subtle)',
+          muted: 'var(--border-muted)',
+          focus: 'var(--border-focus)'
+        },
+        accent: {
+          primary: 'var(--accent-primary)',
+          secondary: 'var(--accent-secondary)',
+          tertiary: 'var(--accent-tertiary)',
+          bubble: 'var(--accent-blue-bubble)'
+        }
       },
       transitionTimingFunction: {
         "apple-ease": "cubic-bezier(0.25, 1, 0.5, 1)",
