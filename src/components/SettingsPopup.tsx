@@ -110,7 +110,7 @@ const SettingsPopup = () => {
 
                 <div className="h-px bg-white/[0.04] my-0.5 mx-2" />
 
-                {/* Show/Hide Cluely */}
+                {/* Show/Hide Natively */}
                 <div className="flex items-center justify-between px-3 py-2 hover:bg-white/5 rounded-lg transition-colors duration-200 group cursor-pointer interaction-base interaction-press">
                     <div className="flex items-center gap-3">
                         <MessageSquare className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 transition-colors" />

@@ -1,6 +1,6 @@
 {
   "name": "natively",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "./dist-electron/main.js",
   "scripts": {
     "clean": "rimraf dist dist-electron",
@@ -97,7 +97,8 @@
       {
         "provider": "github",
         "owner": "evinjohnn",
-        "repo": "natively"
+        "repo": "Natively",
+        "releaseType": "release"
       }
     ]
   },
@@ -149,6 +150,7 @@
     "clsx": "^2.1.1",
     "diff": "^7.0.0",
     "dotenv": "^17.2.3",
+    "electron-updater": "^6.7.3",
     "form-data": "^4.0.1",
     "framer-motion": "^12.29.2",
     "katex": "^0.16.27",

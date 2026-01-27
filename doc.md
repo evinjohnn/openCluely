@@ -1,10 +1,10 @@
 # Reverse-Engineering "Invisible Cheating App" - Natively Architecture
 
-Everyone saw the viral stunt with "Cluely," the invisible app designed to secretly ace coding interviews. I tore apart the app to see how it works, and turns out, the tech itself is genuinely interesting.
+Everyone saw the viral stunt with "Natively," the invisible app designed to secretly ace coding interviews. I tore apart the app to see how it works, and turns out, the tech itself is genuinely interesting.
 
-![Cluely Screenshot](image.png)
+![Natively Screenshot](image.png)
 
-### How Cluely Actually Works (Technical Breakdown)
+### How Natively Actually Works (Technical Breakdown)
 
 Natively was built using Electron, a desktop app framework based on Chromium and Node.js, to create a transparent, always-on-top overlay:
 

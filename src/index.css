@@ -22,92 +22,99 @@
   /* System Fonts - SF Pro */
   --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 
-  /* ---------------------------------------------------- */
-  /* COLOR SYSTEM - SEMANTIC TOKENS                       */
-  /* ---------------------------------------------------- */
+  /* --- SEMANTIC TOKEN SYSTEM (DEFAULT: DARK) --- */
+  /* Reference Image Matching */
+  --bg-sidebar: #18181B;
+  /* User Spec: Side Panel */
+  --bg-main: #1E1E21;
+  /* User Spec: Main BG */
+  --bg-card: #242429;
+  /* User Spec: Detectable Container */
 
-  /* DEFAULT: DARK MODE (Source of Truth) */
-  --bg-primary: #050505;
-  /* Main app background */
-  --bg-secondary: #000000;
-  /* List backgrounds, deeply recessed */
-  --bg-tertiary: #121212;
-  /* Headers, Inputs */
-  --bg-elevated: #1A1A1A;
-  /* Cards, Hovers, Pills */
-  --bg-surface: #151515;
-  /* Hero sections */
-  --bg-highlight: #2C2C2C;
-  /* Badges, Tags */
-  --bg-overlay: rgba(18, 18, 18, 0.95);
-  /* Modal/Overlay Background */
+  --bg-toggle-switch: #303033;
+  /* User Spec: Toggle Button */
+  --bg-item-surface: #27272A;
+  /* User Spec: Icons & Input Backgrounds */
+  --bg-item-active: #2C2C2C;
+  /* Selected state */
 
-  --text-primary: #FFFFFF;
-  /* pure white */
-  --text-secondary: #E2E8F0;
-  /* slate-200 */
-  --text-tertiary: #94A3B8;
-  /* slate-400/500 mix */
-  --text-quaternary: #64748B;
-  /* slate-500/600 mix */
-  --text-muted: #475569;
-  /* slate-600 */
+  --bg-primary: #000000;
+  /* Fallback */
+  --bg-secondary: #050505;
+  /* Fallback */
+  --bg-elevated: #151515;
+  /* Fallback */
+  --bg-input: #1A1A1A;
+  /* Fallback */
 
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-muted: rgba(255, 255, 255, 0.12);
-  --border-focus: rgba(255, 255, 255, 0.2);
+  --text-primary: #ffffff;
+  --text-secondary: #A0A0A0;
+  --text-tertiary: #606060;
 
-  --accent-primary: #2563EB;
-  /* blue-600 */
-  --accent-secondary: #3B82F6;
-  /* blue-500 */
-  --accent-tertiary: #60A5FA;
-  /* blue-400 */
-  --accent-blue-bubble: #0A84FF;
+  --border-subtle: transparent;
+  --border-muted: #333333;
+
+  --accent-primary: #3b82f6;
+  --accent-muted: rgba(59, 130, 246, 0.15);
+
+  --bg-component: #262626;
+  /* Specific legacy value */
+
+  --overlay-bg: rgba(30, 30, 30, 0.65);
 }
 
-/* LIGHT MODE - Manual Design (Not Auto-Inverted) */
 [data-theme='light'] {
-  /* Backgrounds: Calm, Off-White, Premium */
-  --bg-primary: #FAFAFA;
-  /* Neutral 50 - Warm/Calm main bg */
+  /* --- LIGHT MODE PALETTE (Refined Material Model) --- */
+
+  /* Canvas = Matte Paper | Cards = Porcelain */
+  --bg-primary: #F9F9F9;
+  /* Matte Paper: Soft, slight warmth, not sterile */
   --bg-secondary: #FFFFFF;
-  /* Pure white for content/lists to pop */
-  --bg-tertiary: #F1F5F9;
-  /* Headers/Inputs (slate-100) */
+  /* Porcelain: Distinct headers */
   --bg-elevated: #FFFFFF;
-  /* Cards (rely on shadow in light mode) */
-  --bg-surface: #F8FAFC;
-  /* Hero sections (slate-50) */
-  --bg-highlight: #E2E8F0;
-  /* Badges (slate-200) */
-  --bg-overlay: rgba(255, 255, 255, 0.95);
+  /* Porcelain: Clean cards */
+  --bg-input: #F0F0F2;
+  /* Recessed/Input areas */
 
-  /* Text: Charcoal/Deep Slate - never pure black */
-  --text-primary: #1E293B;
-  /* slate-800 */
-  --text-secondary: #475569;
-  /* slate-600 */
-  --text-tertiary: #64748B;
-  /* slate-500 */
-  --text-quaternary: #94A3B8;
-  /* slate-400 */
-  --text-muted: #CBD5E1;
-  /* slate-300 */
+  /* Reference Image Mappings (Light) */
+  --bg-sidebar: #FAFAFA;
+  /* User Spec Light */
+  --bg-main: #FFFFFF;
+  /* User Spec Light */
+  --bg-card: #F4F4F5;
+  /* User Spec Light */
+  --bg-item-active: #E4E4E7;
+  /* User Spec Light */
 
-  /* Borders: Very subtle in light mode */
-  --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-muted: rgba(0, 0, 0, 0.12);
-  --border-focus: rgba(0, 0, 0, 0.15);
+  --bg-toggle-switch: #E4E4E7;
+  /* User Spec Light */
+  --bg-item-surface: #F4F4F5;
+  /* User Spec Light */
 
-  /* Accents: Adjusted for light mode contrast if needed */
-  --accent-primary: #2563EB;
-  --accent-secondary: #3B82F6;
-  --accent-tertiary: #3B82F6;
-  /* Darker blue for visibility on light bg */
-  --accent-blue-bubble: #007AFF;
+  /* Text = Graphite Ink */
+  --text-primary: #1C1C1E;
+  /* deep graphite, never pure black */
+  --text-secondary: #636366;
+  /* distinctly receded grey */
+  --text-tertiary: #8E8E93;
+  /* structural metadata */
+
+  /* Borders = Nearly Invisible */
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-muted: rgba(0, 0, 0, 0.08);
+
+  /* Accent = Calm & Confident */
+  --accent-primary: #0071E3;
+  /* Premium balanced blue */
+  /* Premium balanced blue */
+  --accent-muted: rgba(0, 113, 227, 0.12);
+
+  --bg-component: #F0F0F2;
+  /* Input/Button background in Light Mode */
+
+  --overlay-bg: rgba(245, 245, 247, 0.75);
+  /* Frosted matte glass */
 }
-
 
 /* App sizing baseline (required for h-full / flex scroll areas) */
 html,
@@ -117,7 +124,7 @@ body,
   width: 100%;
   overflow: hidden;
   /* Transparent background to let vibrancy show through */
-  background: transparent;
+  background: transparent !important;
   /* System font */
   font-family: var(--font-system);
   /* Smoother fonts */
@@ -233,4 +240,18 @@ a:hover,
 .app-content {
   background: transparent;
   /* Let vibrancy show */
+}
+
+@keyframes shine {
+  0% {
+    transform: translateX(-100%) skewX(-12deg);
+  }
+
+  100% {
+    transform: translateX(200%) skewX(-12deg);
+  }
+}
+
+.animate-shine {
+  animation: shine 2s infinite;
 }

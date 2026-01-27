@@ -149,7 +149,7 @@ export class NativeAudioClient extends EventEmitter {
 
     /**
      * Send assistant suggestion to native service for context storage
-     * This enables Cluely-style follow-up commands like "rephrase that" or "make it shorter"
+     * This enables Natively-style follow-up commands like "rephrase that" or "make it shorter"
      * @param suggestion - The AI-generated suggestion text
      */
     sendAssistantSuggestion(suggestion: string): void {

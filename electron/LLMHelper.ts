@@ -411,7 +411,7 @@ export class LLMHelper {
   }
 
   /**
-   * Generate a suggestion based on conversation transcript - Cluely-style
+   * Generate a suggestion based on conversation transcript - Natively-style
    * This uses Gemini Flash to reason about what the user should say
    * @param context - The full conversation transcript
    * @param lastQuestion - The most recent question from the interviewer

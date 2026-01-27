@@ -1,5 +1,5 @@
 // electron/llm/types.ts
-// Shared types for the Cluely LLM system
+// Shared types for the Natively LLM system
 
 import { GoogleGenAI } from "@google/genai";
 

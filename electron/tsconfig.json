@@ -13,5 +13,11 @@
     "moduleResolution": "node",
     "resolveJsonModule": true
   },
-  "include": ["*.ts"]
+  "include": [
+    "**/*.ts"
+  ],
+  "exclude": [
+    "db/seedDemo.ts",
+    "db/test-db.ts"
+  ]
 }

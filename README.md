@@ -17,7 +17,7 @@
 1. Clone the repository:
 ```bash
 git clone [repository-url]
-cd free-cluely
+cd natively
 ```
 
 2. Install dependencies:

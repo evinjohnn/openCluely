@@ -108,7 +108,7 @@ export class WindowHelper {
       visualEffectState: 'followWindow',
       transparent: true,
       hasShadow: true,
-      backgroundColor: "#00000000",
+      backgroundColor: "#000000",
       focusable: true,
       resizable: true,
       movable: true,
@@ -118,7 +118,7 @@ export class WindowHelper {
     this.launcherWindow = new BrowserWindow(launcherSettings)
     this.launcherWindow.setContentProtection(true)
     this.launcherWindow.loadURL(`${startUrl}?window=launcher`).catch((e) => { console.error("Failed to load URL:", e) })
-    this.launcherWindow.webContents.openDevTools({ mode: 'detach' });
+    // this.launcherWindow.webContents.openDevTools({ mode: 'detach' });
 
     // --- 2. Create Overlay Window (Hidden initially) ---
     const overlaySettings: Electron.BrowserWindowConstructorOptions = {

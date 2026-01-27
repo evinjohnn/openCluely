@@ -1,11 +1,14 @@
 import React, { useState } from "react" // forcing refresh
 import { QueryClient, QueryClientProvider } from "react-query"
 import { ToastProvider, ToastViewport } from "./components/ui/toast"
-import NativelyInterface from "./components/CluelyInterface"
+import NativelyInterface from "./components/NativelyInterface"
 import SettingsPopup from "./components/SettingsPopup" // Keeping for legacy/specific window support if needed
 import AdvancedSettings from "./components/AdvancedSettings"
 import Launcher from "./components/Launcher"
 import SettingsOverlay from "./components/SettingsOverlay"
+import StartupSequence from "./components/StartupSequence"
+import { AnimatePresence, motion } from "framer-motion"
+import UpdateBanner from "./components/UpdateBanner"
 
 const queryClient = new QueryClient()
 
@@ -19,7 +22,7 @@ const App: React.FC = () => {
   const isDefault = !isSettingsWindow && !isAdvancedWindow && !isOverlayWindow;
 
   // State
-  // We no longer need 'view' state for routing, but we might need it internally or just tracking
+  const [showStartup, setShowStartup] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Handlers
@@ -84,7 +87,7 @@ const App: React.FC = () => {
   // --- OVERLAY WINDOW (Meeting Interface) ---
   if (isOverlayWindow) {
     return (
-      <div className="h-full min-h-0 w-full relative bg-transparent">
+      <div className="w-full relative bg-transparent">
         <QueryClientProvider client={queryClient}>
           <ToastProvider>
             <NativelyInterface
@@ -101,21 +104,44 @@ const App: React.FC = () => {
   // Renders if window=launcher OR no param
   return (
     <div className="h-full min-h-0 w-full relative">
-
-
-      <QueryClientProvider client={queryClient}>
-        <ToastProvider>
-          <Launcher
-            onStartMeeting={handleStartMeeting}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-          />
-          <SettingsOverlay
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-          />
-          <ToastViewport />
-        </ToastProvider>
-      </QueryClientProvider>
+      <AnimatePresence>
+        {showStartup ? (
+          <motion.div
+            key="startup"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.1, pointerEvents: "none", transition: { duration: 0.6, ease: "easeInOut" } }}
+          >
+            <StartupSequence onComplete={() => setShowStartup(false)} />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="main"
+            className="h-full w-full"
+            initial={{ opacity: 0, scale: 0.98, y: 15 }} // "Linear" style entry: slightly down and scaled down
+            animate={{ opacity: 1, scale: 1, y: 0 }}      // Slide up and snap to place
+            transition={{
+              duration: 0.8,
+              ease: [0.19, 1, 0.22, 1], // Expo-out: snappy start, smooth landing
+              delay: 0.1
+            }}
+          >
+            <QueryClientProvider client={queryClient}>
+              <ToastProvider>
+                <Launcher
+                  onStartMeeting={handleStartMeeting}
+                  onOpenSettings={() => setIsSettingsOpen(true)}
+                />
+                <SettingsOverlay
+                  isOpen={isSettingsOpen}
+                  onClose={() => setIsSettingsOpen(false)}
+                />
+                <ToastViewport />
+              </ToastProvider>
+            </QueryClientProvider>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <UpdateBanner />
     </div>
   )
 }

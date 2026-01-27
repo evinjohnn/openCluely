@@ -33,13 +33,6 @@ export interface ElectronAPI {
   getUndetectable: () => Promise<boolean>
   setOpenAtLogin: (open: boolean) => Promise<{ success: boolean; error?: string }>
   getOpenAtLogin: () => Promise<boolean>
-
-
-  // Theme support
-  setTheme: (theme: 'dark' | 'light' | 'system') => Promise<{ success: boolean; error?: string }>
-  getTheme: () => Promise<'dark' | 'light' | 'system'>
-  onThemeUpdate: (callback: (theme: 'dark' | 'light') => void) => () => void
-
   onSettingsVisibilityChange: (callback: (isVisible: boolean) => void) => () => void
   toggleSettingsWindow: (coords?: { x: number; y: number }) => Promise<void>
   closeSettingsWindow: () => Promise<void>
@@ -80,6 +73,7 @@ export interface ElectronAPI {
   startMeeting: () => Promise<{ success: boolean; error?: string }>
   endMeeting: () => Promise<{ success: boolean; error?: string }>
   getRecentMeetings: () => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
+  getMeetingDetails: (id: string) => Promise<any>
   setWindowMode: (mode: 'launcher' | 'overlay') => Promise<void>
 
   // Intelligence Mode Events
@@ -103,7 +97,30 @@ export interface ElectronAPI {
   onGeminiStreamDone: (callback: () => void) => () => void
   onGeminiStreamError: (callback: (error: string) => void) => () => void
 
+  onMeetingsUpdated: (callback: () => void) => () => void
+
+  // Theme API
+  getThemeMode: () => Promise<{ mode: 'system' | 'light' | 'dark', resolved: 'light' | 'dark' }>
+  setThemeMode: (mode: 'system' | 'light' | 'dark') => Promise<void>
+  onThemeChanged: (callback: (data: { mode: 'system' | 'light' | 'dark', resolved: 'light' | 'dark' }) => void) => () => void
+
+  // Calendar
+  calendarConnect: () => Promise<{ success: boolean; error?: string }>
+  calendarDisconnect: () => Promise<{ success: boolean; error?: string }>
+  getCalendarStatus: () => Promise<{ connected: boolean; email?: string }>
+  getUpcomingEvents: () => Promise<Array<{ id: string; title: string; startTime: string; endTime: string; link?: string; source: 'google' }>>
+  calendarRefresh: () => Promise<{ success: boolean; error?: string }>
+
   invoke: (channel: string, ...args: any[]) => Promise<any>
+
+  // Auto-Update
+  onUpdateAvailable: (callback: (info: any) => void) => () => void
+  onUpdateDownloaded: (callback: (info: any) => void) => () => void
+  onUpdateChecking: (callback: () => void) => () => void
+  onUpdateNotAvailable: (callback: (info: any) => void) => () => void
+  onUpdateError: (callback: (err: string) => void) => () => void
+  restartAndInstall: () => Promise<void>
+  checkForUpdates: () => Promise<void>
 }
 
 declare global {

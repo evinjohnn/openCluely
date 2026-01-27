@@ -1,75 +1,99 @@
-import { nativeTheme, app, BrowserWindow } from 'electron';
+import { nativeTheme, ipcMain, BrowserWindow, app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 
-export type ThemePreference = 'dark' | 'light' | 'system';
-export type EffectiveTheme = 'dark' | 'light';
+export type ThemeMode = 'system' | 'light' | 'dark';
+export type ResolvedTheme = 'light' | 'dark';
+
+interface ThemeConfig {
+    mode: ThemeMode;
+}
 
 export class ThemeManager {
-    private preference: ThemePreference = 'dark'; // Default
+    private static instance: ThemeManager;
+    private mode: ThemeMode = 'system';
     private configPath: string;
 
-    constructor() {
+    private constructor() {
         this.configPath = path.join(app.getPath('userData'), 'theme-config.json');
         this.loadConfig();
+        this.setupListeners();
+    }
 
-        // Apply initial preference
-        nativeTheme.themeSource = this.preference;
-
-        // Listen for system changes (only fires if themeSource is 'system')
-        nativeTheme.on('updated', () => {
-            this.broadcastThemeUpdate();
-        });
+    public static getInstance(): ThemeManager {
+        if (!ThemeManager.instance) {
+            ThemeManager.instance = new ThemeManager();
+        }
+        return ThemeManager.instance;
     }
 
     private loadConfig() {
         try {
             if (fs.existsSync(this.configPath)) {
-                const data = fs.readFileSync(this.configPath, 'utf-8');
-                const config = JSON.parse(data);
-                if (config.theme && ['dark', 'light', 'system'].includes(config.theme)) {
-                    this.preference = config.theme as ThemePreference;
+                const data = fs.readFileSync(this.configPath, 'utf8');
+                const config = JSON.parse(data) as ThemeConfig;
+                if (['system', 'light', 'dark'].includes(config.mode)) {
+                    this.mode = config.mode;
                 }
             }
-        } catch (e) {
-            console.error('[ThemeManager] Failed to load config', e);
+        } catch (error) {
+            console.error('Failed to load theme config:', error);
         }
     }
 
     private saveConfig() {
         try {
-            fs.writeFileSync(this.configPath, JSON.stringify({ theme: this.preference }), 'utf-8');
-        } catch (e) {
-            console.error('[ThemeManager] Failed to save config', e);
+            const config: ThemeConfig = { mode: this.mode };
+            fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
+        } catch (error) {
+            console.error('Failed to save theme config:', error);
         }
     }
 
-    public setTheme(theme: ThemePreference) {
-        console.log(`[ThemeManager] Setting theme to: ${theme}`);
-        this.preference = theme;
-        try {
-            nativeTheme.themeSource = theme;
-        } catch (e) {
-            console.error("Error setting nativeTheme.themeSource", e);
-        }
+    private setupListeners() {
+        nativeTheme.on('updated', () => {
+            if (this.mode === 'system') {
+                this.broadcastThemeChange();
+            }
+        });
+    }
+
+    public getMode(): ThemeMode {
+        return this.mode;
+    }
+
+    public setMode(mode: ThemeMode) {
+        this.mode = mode;
         this.saveConfig();
-        this.broadcastThemeUpdate();
+
+        // Force native theme update if not system, so electron internal UI matches if possible
+        if (mode === 'dark') {
+            nativeTheme.themeSource = 'dark';
+        } else if (mode === 'light') {
+            nativeTheme.themeSource = 'light';
+        } else {
+            nativeTheme.themeSource = 'system';
+        }
+
+        this.broadcastThemeChange();
     }
 
-    public getTheme(): ThemePreference {
-        return this.preference;
+    public getResolvedTheme(): ResolvedTheme {
+        if (this.mode === 'system') {
+            return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+        }
+        return this.mode;
     }
 
-    public getEffectiveTheme(): EffectiveTheme {
-        return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
-    }
+    public broadcastThemeChange() {
+        const payload = {
+            mode: this.mode,
+            resolved: this.getResolvedTheme()
+        };
 
-    private broadcastThemeUpdate() {
-        const effective = this.getEffectiveTheme();
-        console.log(`[ThemeManager] Broadcasting effective theme: ${effective}`);
         BrowserWindow.getAllWindows().forEach(win => {
             if (!win.isDestroyed()) {
-                win.webContents.send('theme-updated', effective);
+                win.webContents.send('theme:changed', payload);
             }
         });
     }

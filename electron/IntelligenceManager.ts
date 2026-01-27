@@ -85,6 +85,16 @@ export class IntelligenceManager extends EventEmitter {
     // Last assistant message for follow-up mode
     private lastAssistantMessage: string | null = null;
 
+    private currentMeetingMetadata: {
+        title?: string;
+        calendarEventId?: string;
+        source?: 'manual' | 'calendar';
+    } | null = null;
+
+    public setMeetingMetadata(metadata: any) {
+        this.currentMeetingMetadata = metadata;
+    }
+
     // Mode state
     private activeMode: IntelligenceMode = 'idle';
     private assistCancellationToken: AbortController | null = null;
@@ -739,25 +749,59 @@ export class IntelligenceManager extends EventEmitter {
     private async processAndSaveMeeting(data: { transcript: TranscriptSegment[], usage: any[], startTime: number, durationMs: number, context: string }, meetingId: string): Promise<void> {
         let title = "Untitled Session";
         let summaryData: { actionItems: string[], keyPoints: string[] } = { actionItems: [], keyPoints: [] };
+        let calendarEventId: string | undefined;
+        let source: 'manual' | 'calendar' = 'manual';
+
+        if (this.currentMeetingMetadata) {
+            if (this.currentMeetingMetadata.title) title = this.currentMeetingMetadata.title;
+            if (this.currentMeetingMetadata.calendarEventId) calendarEventId = this.currentMeetingMetadata.calendarEventId;
+            if (this.currentMeetingMetadata.source) source = this.currentMeetingMetadata.source;
+        }
 
         try {
-            // Generate Title
-            if (this.recapLLM) {
+            // Generate Title (only if not set by calendar)
+            if (this.recapLLM && (!this.currentMeetingMetadata || !this.currentMeetingMetadata.title)) {
                 const titlePrompt = `Generate a concise 3-6 word title for this meeting context. Output ONLY the title text. Do not use quotes or conversational filler. Context:\n${data.context.substring(0, 5000)}`;
                 const generatedTitle = await this.llmHelper.chatWithGemini(titlePrompt, undefined, undefined, true);
                 if (generatedTitle) title = generatedTitle.replace(/["*]/g, '').trim();
+            }
 
-                // Generate Structured Summary
-                const summaryPrompt = `Summarize this meeting into JSON format with 'actionItems' (array of strings) and 'keyPoints' (array of strings). Context:\n${data.context.substring(0, 10000)}`;
+            // Generate Structured Summary
+            // Only generate if we have sufficient context/transcript
+            if (this.recapLLM && data.transcript.length > 2) {
+                const summaryPrompt = `You are a silent meeting summarizer. Convert this conversation into concise internal meeting notes.
+
+RULES:
+- Do NOT invent or infer information not explicitly stated
+- Do NOT explain or define concepts mentioned
+- Do NOT use filler phrases like "The meeting covered..." or "Discussed various..."
+- Do NOT mention transcripts, AI, or summaries
+- Do NOT sound like an AI assistant
+- Sound like a senior PM's internal notes
+
+STYLE: Calm, neutral, professional, skim-friendly. Short bullets, no sub-bullets.
+
+Return ONLY valid JSON (no markdown code blocks):
+{
+  "overview": "1-2 sentence description of what was discussed",
+  "keyPoints": ["3-6 specific bullets - each = one concrete topic or point discussed"],
+  "actionItems": ["specific next steps if any exist, otherwise empty array"]
+}
+
+CONVERSATION:
+${data.context.substring(0, 10000)}`;
                 const generatedSummary = await this.llmHelper.chatWithGemini(summaryPrompt, undefined, undefined, true);
 
                 if (generatedSummary) {
+                    // Try to extract JSON - handle both raw JSON and markdown-wrapped
                     const jsonMatch = generatedSummary.match(/```json\n([\s\S]*?)\n```/) || [null, generatedSummary];
-                    const jsonStr = jsonMatch[1] || generatedSummary;
+                    const jsonStr = (jsonMatch[1] || generatedSummary).trim();
                     try {
                         summaryData = JSON.parse(jsonStr);
                     } catch (e) { console.error("Failed to parse summary JSON", e); }
                 }
+            } else {
+                console.log("Transcript too short for summary generation.");
             }
         } catch (e) {
             console.error("Error generating meeting metadata", e);
@@ -781,11 +825,16 @@ export class IntelligenceManager extends EventEmitter {
                 summary: "See detailed summary",
                 detailedSummary: summaryData,
                 transcript: data.transcript,
-                usage: data.usage
+                usage: data.usage,
+                calendarEventId: calendarEventId,
+                source: source
             };
 
             // Save to SQLite
             DatabaseManager.getInstance().saveMeeting(meetingData, data.startTime, data.durationMs);
+
+            // Clear metadata
+            this.currentMeetingMetadata = null;
 
             // Notify Frontend to refresh list
             const wins = require('electron').BrowserWindow.getAllWindows();

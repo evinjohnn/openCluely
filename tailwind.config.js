@@ -4,39 +4,40 @@ module.exports = {
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
-      fontFamily: {
-        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica", "Arial", "sans-serif"],
-        celeb: ["CelebMF", "sans-serif"],
-        "celeb-light": ["CelebMFLight", "sans-serif"]
-      },
       colors: {
         bg: {
           primary: 'var(--bg-primary)',
           secondary: 'var(--bg-secondary)',
-          tertiary: 'var(--bg-tertiary)',
           elevated: 'var(--bg-elevated)',
-          surface: 'var(--bg-surface)',
-          highlight: 'var(--bg-highlight)',
-          overlay: 'var(--bg-overlay)'
+          input: 'var(--bg-input)',
+
+          /* New Semantic Tokens */
+          sidebar: 'var(--bg-sidebar)',
+          main: 'var(--bg-main)',
+          card: 'var(--bg-card)',
+          component: 'var(--bg-component)',
+          'toggle-switch': 'var(--bg-toggle-switch)',
+          'item-surface': 'var(--bg-item-surface)',
+          'item-active': 'var(--bg-item-active)',
         },
         text: {
           primary: 'var(--text-primary)',
           secondary: 'var(--text-secondary)',
           tertiary: 'var(--text-tertiary)',
-          quaternary: 'var(--text-quaternary)',
-          muted: 'var(--text-muted)'
         },
         border: {
           subtle: 'var(--border-subtle)',
           muted: 'var(--border-muted)',
-          focus: 'var(--border-focus)'
         },
         accent: {
           primary: 'var(--accent-primary)',
-          secondary: 'var(--accent-secondary)',
-          tertiary: 'var(--accent-tertiary)',
-          bubble: 'var(--accent-blue-bubble)'
+          secondary: 'var(--accent-muted)', // Mapping "secondary" to muted for compatibility if needed, or stick to refined naming
         }
+      },
+      fontFamily: {
+        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica", "Arial", "sans-serif"],
+        celeb: ["CelebMF", "sans-serif"],
+        "celeb-light": ["CelebMFLight", "sans-serif"]
       },
       transitionTimingFunction: {
         "apple-ease": "cubic-bezier(0.25, 1, 0.5, 1)",

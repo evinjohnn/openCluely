@@ -27,7 +27,7 @@ export interface Meeting {
         answer?: string;
         items?: string[];
     }>;
-    calendar_event_id?: string;
+    calendarEventId?: string;
     source?: 'manual' | 'calendar';
 }
 
@@ -76,7 +76,9 @@ export class DatabaseManager {
                 start_time INTEGER,
                 duration_ms INTEGER,
                 summary_json TEXT, -- JSON containing actionItems, keyPoints, and legacy summary text if needed
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                calendar_event_id TEXT,
+                source TEXT
             );
         `;
 
@@ -108,18 +110,14 @@ export class DatabaseManager {
         this.db.exec(createTranscriptsTable);
         this.db.exec(createAiInteractionsTable);
 
-        // Calendar Migration (safe column addition)
+        // Migration for existing tables
         try {
-            const columns = this.db.prepare("PRAGMA table_info(meetings)").all() as any[];
-            const hasSource = columns.some(c => c.name === 'source');
-            if (!hasSource) {
-                this.db.exec("ALTER TABLE meetings ADD COLUMN source TEXT DEFAULT 'manual'");
-                this.db.exec("ALTER TABLE meetings ADD COLUMN calendar_event_id TEXT");
-                console.log('[DatabaseManager] Added calendar columns to meetings table.');
-            }
-        } catch (e) {
-            console.error('[DatabaseManager] Migration error:', e);
-        }
+            this.db.exec("ALTER TABLE meetings ADD COLUMN calendar_event_id TEXT");
+        } catch (e) { /* Column likely exists */ }
+
+        try {
+            this.db.exec("ALTER TABLE meetings ADD COLUMN source TEXT");
+        } catch (e) { /* Column likely exists */ }
 
         console.log('[DatabaseManager] Migrations completed.');
     }
@@ -135,8 +133,8 @@ export class DatabaseManager {
         }
 
         const insertMeeting = this.db.prepare(`
-            INSERT OR REPLACE INTO meetings (id, title, start_time, duration_ms, summary_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO meetings (id, title, start_time, duration_ms, summary_json, created_at, calendar_event_id, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const insertTranscript = this.db.prepare(`
@@ -162,16 +160,10 @@ export class DatabaseManager {
                 startTimeMs,
                 durationMs,
                 summaryJson,
-                meeting.date // Using the ISO string as created_at for sorting simply
+                meeting.date, // Using the ISO string as created_at for sorting simply
+                meeting.calendarEventId || null,
+                meeting.source || 'manual'
             );
-
-            // Update source fields if needed (since we only altered table, basic insert might miss them if not updated query)
-            // Actually, we should update the insert query above, or run a separate update for these fields if not in initial insert.
-            // Let's update the initial query to include them.
-            if (meeting.source === 'calendar') {
-                this.db.prepare("UPDATE meetings SET source = ?, calendar_event_id = ? WHERE id = ?")
-                    .run(meeting.source, meeting.calendar_event_id || null, meeting.id);
-            }
 
             // 2. Insert Transcript
             if (meeting.transcript) {
@@ -252,11 +244,11 @@ export class DatabaseManager {
                 duration: durationStr,
                 summary: summaryData.legacySummary || '',
                 detailedSummary: summaryData.detailedSummary,
+                calendarEventId: row.calendar_event_id,
+                source: row.source as any,
                 // We don't load full transcript/usage for list view to keep it light
                 transcript: [] as any[],
-                usage: [] as any[],
-                source: (row.source as 'manual' | 'calendar') || 'manual',
-                calendar_event_id: row.calendar_event_id
+                usage: [] as any[]
             };
         });
     }
@@ -320,17 +312,17 @@ export class DatabaseManager {
             duration: durationStr,
             summary: summaryData.legacySummary || '',
             detailedSummary: summaryData.detailedSummary,
+            calendarEventId: meetingRow.calendar_event_id,
+            source: meetingRow.source,
             transcript: transcript,
-            usage: usage,
-            source: meetingRow.source || 'manual',
-            calendar_event_id: meetingRow.calendar_event_id
+            usage: usage
         };
     }
 
     public seedDemoMeeting() {
         if (!this.db) return;
 
-        const demoId = 'demo-meeting-001';
+        const demoId = 'demo-meeting-002';
 
         // Check if exists
         const exists = this.db.prepare('SELECT id FROM meetings WHERE id = ?').get(demoId);
@@ -348,10 +340,10 @@ export class DatabaseManager {
 
         const demoMeeting: Meeting = {
             id: demoId,
-            title: "Cluely Demo with CEO Roy Lee",
+            title: "Natively Demo with CEO Evin",
             date: today.toISOString(),
             duration: "4:48",
-            summary: "Discussion about Cluely product features and roadmap.",
+            summary: "Discussion about Natively product features and roadmap.",
             detailedSummary: {
                 actionItems: [
                     'Review the "Telugu sara" phrase clarification',

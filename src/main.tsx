@@ -3,12 +3,20 @@ import ReactDOM from "react-dom/client"
 import App from "./App"
 import "./index.css"
 
-import { ThemeProvider } from "./components/ThemeContext"
+// Initialize Theme
+if (window.electronAPI && window.electronAPI.getThemeMode) {
+  window.electronAPI.getThemeMode().then(({ resolved }) => {
+    document.documentElement.setAttribute('data-theme', resolved);
+  });
+
+  // Listen for changes
+  window.electronAPI.onThemeChanged(({ resolved }) => {
+    document.documentElement.setAttribute('data-theme', resolved);
+  });
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ThemeProvider>
-      <App />
-    </ThemeProvider>
+    <App />
   </React.StrictMode>
 )

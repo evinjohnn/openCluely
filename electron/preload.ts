@@ -69,12 +69,8 @@ interface ElectronAPI {
   startMeeting: () => Promise<{ success: boolean; error?: string }>
   endMeeting: () => Promise<{ success: boolean; error?: string }>
   getRecentMeetings: () => Promise<Array<{ id: string; title: string; date: string; duration: string; summary: string }>>
-
-  // Calendar Integration
-  calendarConnect: () => Promise<{ success: boolean; error?: string }>
-  calendarDisconnect: () => Promise<{ success: boolean }>
-  getUpcomingMeetings: () => Promise<Array<{ id: string; title: string; startTime: string; endTime: string; link?: string; source: string }>>
-  getCalendarStatus: () => Promise<{ connected: boolean; email?: string }>
+  getMeetingDetails: (id: string) => Promise<any>
+  onMeetingsUpdated: (callback: () => void) => () => void
 
   // Intelligence Mode Events
   onIntelligenceAssistUpdate: (callback: (data: { insight: string }) => void) => () => void
@@ -97,6 +93,27 @@ interface ElectronAPI {
   onGeminiStreamDone: (callback: () => void) => () => void
   onGeminiStreamError: (callback: (error: string) => void) => () => void
   on: (channel: string, callback: (...args: any[]) => void) => () => void
+
+  // Theme API
+  getThemeMode: () => Promise<{ mode: 'system' | 'light' | 'dark', resolved: 'light' | 'dark' }>
+  setThemeMode: (mode: 'system' | 'light' | 'dark') => Promise<void>
+  onThemeChanged: (callback: (data: { mode: 'system' | 'light' | 'dark', resolved: 'light' | 'dark' }) => void) => () => void
+
+  // Calendar
+  calendarConnect: () => Promise<{ success: boolean; error?: string }>
+  calendarDisconnect: () => Promise<{ success: boolean; error?: string }>
+  getCalendarStatus: () => Promise<{ connected: boolean; email?: string }>
+  getUpcomingEvents: () => Promise<Array<{ id: string; title: string; startTime: string; endTime: string; link?: string; source: 'google' }>>
+  calendarRefresh: () => Promise<{ success: boolean; error?: string }>
+
+  // Auto-Update
+  onUpdateAvailable: (callback: (info: any) => void) => () => void
+  onUpdateDownloaded: (callback: (info: any) => void) => () => void
+  onUpdateChecking: (callback: () => void) => () => void
+  onUpdateNotAvailable: (callback: (info: any) => void) => () => void
+  onUpdateError: (callback: (err: string) => void) => () => void
+  restartAndInstall: () => Promise<void>
+  checkForUpdates: () => Promise<void>
 }
 
 export const PROCESSING_EVENTS = {
@@ -249,19 +266,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setUndetectable: (state: boolean) => ipcRenderer.invoke("set-undetectable", state),
   getUndetectable: () => ipcRenderer.invoke("get-undetectable"),
   setOpenAtLogin: (open: boolean) => ipcRenderer.invoke("set-open-at-login", open),
-
   getOpenAtLogin: () => ipcRenderer.invoke("get-open-at-login"),
-
-  // Theme support
-  setTheme: (theme: 'dark' | 'light' | 'system') => ipcRenderer.invoke("set-theme", theme),
-  getTheme: () => ipcRenderer.invoke("get-theme"),
-  onThemeUpdate: (callback: (theme: 'dark' | 'light') => void) => {
-    const subscription = (_: any, theme: 'dark' | 'light') => callback(theme)
-    ipcRenderer.on("theme-updated", subscription)
-    return () => {
-      ipcRenderer.removeListener("theme-updated", subscription)
-    }
-  },
 
   onSettingsVisibilityChange: (callback: (isVisible: boolean) => void) => {
     const subscription = (_: any, isVisible: boolean) => callback(isVisible)
@@ -356,12 +361,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   startMeeting: () => ipcRenderer.invoke("start-meeting"),
   endMeeting: () => ipcRenderer.invoke("end-meeting"),
   getRecentMeetings: () => ipcRenderer.invoke("get-recent-meetings"),
+  getMeetingDetails: (id: string) => ipcRenderer.invoke("get-meeting-details", id),
 
-  // Calendar Integration
-  calendarConnect: () => ipcRenderer.invoke("calendar-connect"),
-  calendarDisconnect: () => ipcRenderer.invoke("calendar-disconnect"),
-  getUpcomingMeetings: () => ipcRenderer.invoke("calendar-get-upcoming"),
-  getCalendarStatus: () => ipcRenderer.invoke("calendar-status"),
+  onMeetingsUpdated: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("meetings-updated", subscription)
+    return () => {
+      ipcRenderer.removeListener("meetings-updated", subscription)
+    }
+  },
 
   // Window Mode
   setWindowMode: (mode: 'launcher' | 'overlay') => ipcRenderer.invoke("set-window-mode", mode),
@@ -495,6 +503,62 @@ contextBridge.exposeInMainWorld("electronAPI", {
     return () => {
       ipcRenderer.removeListener(channel, subscription)
     }
-  }
-} as ElectronAPI)
+  },
 
+  // Theme API
+  getThemeMode: () => ipcRenderer.invoke('theme:get-mode'),
+  setThemeMode: (mode: 'system' | 'light' | 'dark') => ipcRenderer.invoke('theme:set-mode', mode),
+  onThemeChanged: (callback: (data: { mode: 'system' | 'light' | 'dark', resolved: 'light' | 'dark' }) => void) => {
+    const subscription = (_: any, data: any) => callback(data)
+    ipcRenderer.on('theme:changed', subscription)
+    return () => {
+      ipcRenderer.removeListener('theme:changed', subscription)
+    }
+  },
+
+  // Calendar API
+  calendarConnect: () => ipcRenderer.invoke('calendar-connect'),
+  calendarDisconnect: () => ipcRenderer.invoke('calendar-disconnect'),
+  getCalendarStatus: () => ipcRenderer.invoke('get-calendar-status'),
+  getUpcomingEvents: () => ipcRenderer.invoke('get-upcoming-events'),
+  calendarRefresh: () => ipcRenderer.invoke('calendar-refresh'),
+
+  // Auto-Update
+  onUpdateAvailable: (callback: (info: any) => void) => {
+    const subscription = (_: any, info: any) => callback(info)
+    ipcRenderer.on("update-available", subscription)
+    return () => {
+      ipcRenderer.removeListener("update-available", subscription)
+    }
+  },
+  onUpdateDownloaded: (callback: (info: any) => void) => {
+    const subscription = (_: any, info: any) => callback(info)
+    ipcRenderer.on("update-downloaded", subscription)
+    return () => {
+      ipcRenderer.removeListener("update-downloaded", subscription)
+    }
+  },
+  onUpdateChecking: (callback: () => void) => {
+    const subscription = () => callback()
+    ipcRenderer.on("update-checking", subscription)
+    return () => {
+      ipcRenderer.removeListener("update-checking", subscription)
+    }
+  },
+  onUpdateNotAvailable: (callback: (info: any) => void) => {
+    const subscription = (_: any, info: any) => callback(info)
+    ipcRenderer.on("update-not-available", subscription)
+    return () => {
+      ipcRenderer.removeListener("update-not-available", subscription)
+    }
+  },
+  onUpdateError: (callback: (err: string) => void) => {
+    const subscription = (_: any, err: string) => callback(err)
+    ipcRenderer.on("update-error", subscription)
+    return () => {
+      ipcRenderer.removeListener("update-error", subscription)
+    }
+  },
+  restartAndInstall: () => ipcRenderer.invoke("quit-and-install-update"),
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+} as ElectronAPI)

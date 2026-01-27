@@ -98,7 +98,7 @@ export function initializeIpcHandlers(appState: AppState): void {
 
 
 
-  // Generate suggestion from transcript - Cluely-style text-only reasoning
+  // Generate suggestion from transcript - Natively-style text-only reasoning
   ipcMain.handle("generate-suggestion", async (event, context: string, lastQuestion: string) => {
     try {
       const suggestion = await appState.processingHelper.getLLMHelper().generateSuggestion(context, lastQuestion)
@@ -206,6 +206,14 @@ export function initializeIpcHandlers(appState: AppState): void {
     app.quit()
   })
 
+  ipcMain.handle("quit-and-install-update", () => {
+    appState.quitAndInstallUpdate()
+  })
+
+  ipcMain.handle("check-for-updates", async () => {
+    await appState.checkForUpdates()
+  })
+
   // Window movement handlers
   ipcMain.handle("move-window-left", async () => {
     appState.moveWindowLeft()
@@ -264,16 +272,6 @@ export function initializeIpcHandlers(appState: AppState): void {
   ipcMain.handle("get-open-at-login", async () => {
     const settings = app.getLoginItemSettings();
     return settings.openAtLogin;
-  });
-
-  // Theme support
-  ipcMain.handle("set-theme", async (_, theme: 'dark' | 'light' | 'system') => {
-    appState.getThemeManager().setTheme(theme);
-    return { success: true };
-  });
-
-  ipcMain.handle("get-theme", async () => {
-    return appState.getThemeManager().getTheme();
   });
 
   // LLM Model Management Handlers
@@ -377,9 +375,9 @@ export function initializeIpcHandlers(appState: AppState): void {
   // Meeting Lifecycle Handlers
   // ==========================================
 
-  ipcMain.handle("start-meeting", async () => {
+  ipcMain.handle("start-meeting", async (event, metadata?: any) => {
     try {
-      await appState.startMeeting();
+      await appState.startMeeting(metadata);
       return { success: true };
     } catch (error: any) {
       console.error("Error starting meeting:", error);
@@ -410,30 +408,6 @@ export function initializeIpcHandlers(appState: AppState): void {
   ipcMain.handle("seed-demo", async () => {
     DatabaseManager.getInstance().seedDemoMeeting();
     return { success: true };
-  });
-
-  // Calendar Integration
-  ipcMain.handle("calendar-connect", async () => {
-    try {
-      await appState.getCalendarService().connect();
-      return { success: true };
-    } catch (e: any) {
-      console.error("Calendar connect error:", e);
-      return { success: false, error: e.message };
-    }
-  });
-
-  ipcMain.handle("calendar-disconnect", async () => {
-    appState.getCalendarService().disconnect();
-    return { success: true };
-  });
-
-  ipcMain.handle("calendar-get-upcoming", async () => {
-    return appState.getCalendarService().getUpcomingMeetings();
-  });
-
-  ipcMain.handle("calendar-status", async () => {
-    return appState.getCalendarService().getStatus();
   });
 
   ipcMain.handle("open-external", async (event, url: string) => {
@@ -563,5 +537,59 @@ export function initializeIpcHandlers(appState: AppState): void {
       console.error("Error selecting service account:", error);
       return { success: false, error: error.message };
     }
+  });
+
+  // ==========================================
+  // Theme System Handlers
+  // ==========================================
+
+  ipcMain.handle("theme:get-mode", () => {
+    const tm = appState.getThemeManager();
+    return {
+      mode: tm.getMode(),
+      resolved: tm.getResolvedTheme()
+    };
+  });
+
+  ipcMain.handle("theme:set-mode", (_, mode: 'system' | 'light' | 'dark') => {
+    appState.getThemeManager().setMode(mode);
+    return { success: true };
+  });
+
+  // ==========================================
+  // Calendar Integration Handlers
+  // ==========================================
+
+  ipcMain.handle("calendar-connect", async () => {
+    try {
+      const { CalendarManager } = require('./services/CalendarManager');
+      await CalendarManager.getInstance().startAuthFlow();
+      return { success: true };
+    } catch (error: any) {
+      console.error("Calendar auth error:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("calendar-disconnect", async () => {
+    const { CalendarManager } = require('./services/CalendarManager');
+    await CalendarManager.getInstance().disconnect();
+    return { success: true };
+  });
+
+  ipcMain.handle("get-calendar-status", async () => {
+    const { CalendarManager } = require('./services/CalendarManager');
+    return CalendarManager.getInstance().getConnectionStatus();
+  });
+
+  ipcMain.handle("get-upcoming-events", async () => {
+    const { CalendarManager } = require('./services/CalendarManager');
+    return CalendarManager.getInstance().getUpcomingEvents();
+  });
+
+  ipcMain.handle("calendar-refresh", async () => {
+    const { CalendarManager } = require('./services/CalendarManager');
+    await CalendarManager.getInstance().refreshState();
+    return { success: true };
   });
 }

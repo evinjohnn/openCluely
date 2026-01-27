@@ -1,4 +1,6 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage } from "electron"
+import { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain } from "electron"
+import { autoUpdater } from "electron-updater"
+require('dotenv').config();
 
 // Handle stdout/stderr errors at the process level to prevent EIO crashes
 // This is critical for Electron apps that may have their terminal detached
@@ -46,7 +48,6 @@ import { IntelligenceManager } from "./IntelligenceManager"
 import { SystemAudioCapture } from "./audio/SystemAudioCapture"
 import { GoogleSTT } from "./audio/GoogleSTT"
 import { ThemeManager } from "./ThemeManager"
-import { CalendarService } from "./services/CalendarService"
 
 export class AppState {
   private static instance: AppState | null = null
@@ -58,11 +59,10 @@ export class AppState {
   public processingHelper: ProcessingHelper
   private nativeAudioClient: NativeAudioClient
   private nativeServiceManager: NativeServiceManager
-
   private intelligenceManager: IntelligenceManager
   private themeManager: ThemeManager
-  private calendarService: CalendarService
   private tray: Tray | null = null
+  private updateAvailable: boolean = false
 
   // View management
   private view: "queue" | "solutions" = "queue"
@@ -120,24 +120,75 @@ export class AppState {
     this.intelligenceManager = new IntelligenceManager(this.processingHelper.getLLMHelper())
 
     // Initialize ThemeManager
-    this.themeManager = new ThemeManager()
-
-    // Initialize Calendar Service
-    this.calendarService = new CalendarService()
+    this.themeManager = ThemeManager.getInstance()
 
     this.setupNativeAudioEvents()
     this.setupIntelligenceEvents()
 
     // --- NEW SYSTEM AUDIO PIPELINE (SOX + NODE GOOGLE STT) ---
     this.setupSystemAudioPipeline()
+
+    // Initialize Auto-Updater
+    this.setupAutoUpdater()
   }
 
-  public getThemeManager(): ThemeManager {
-    return this.themeManager;
+  private setupAutoUpdater(): void {
+    autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+
+    autoUpdater.on("checking-for-update", () => {
+      console.log("[AutoUpdater] Checking for update...")
+      this.getMainWindow()?.webContents.send("update-checking")
+    })
+
+    autoUpdater.on("update-available", (info) => {
+      console.log("[AutoUpdater] Update available:", info.version)
+      this.updateAvailable = true
+      // Notify renderer that an update is available (for optional UI signal)
+      this.getMainWindow()?.webContents.send("update-available", info)
+    })
+
+    autoUpdater.on("update-not-available", (info) => {
+      console.log("[AutoUpdater] Update not available:", info.version)
+      this.getMainWindow()?.webContents.send("update-not-available", info)
+    })
+
+    autoUpdater.on("error", (err) => {
+      console.error("[AutoUpdater] Error:", err)
+      this.getMainWindow()?.webContents.send("update-error", err.message)
+    })
+
+    autoUpdater.on("download-progress", (progressObj) => {
+      let log_message = "Download speed: " + progressObj.bytesPerSecond
+      log_message = log_message + " - Downloaded " + progressObj.percent + "%"
+      log_message = log_message + " (" + progressObj.transferred + "/" + progressObj.total + ")"
+      console.log("[AutoUpdater] " + log_message)
+    })
+
+    autoUpdater.on("update-downloaded", (info) => {
+      console.log("[AutoUpdater] Update downloaded:", info.version)
+      // Notify renderer that update is ready to install
+      this.getMainWindow()?.webContents.send("update-downloaded", info)
+    })
+
+    // Only skip the automatic check in development
+    if (process.env.NODE_ENV === "development") {
+      console.log("[AutoUpdater] Skipping automatic update check in development mode")
+      return
+    }
+
+    // Start checking for updates
+    autoUpdater.checkForUpdatesAndNotify().catch(err => {
+      console.error("[AutoUpdater] Failed to check for updates:", err)
+    })
   }
 
-  public getCalendarService(): CalendarService {
-    return this.calendarService;
+  public quitAndInstallUpdate(): void {
+    autoUpdater.quitAndInstall()
+  }
+
+  public async checkForUpdates(): Promise<void> {
+    await autoUpdater.checkForUpdatesAndNotify()
   }
 
   // New Property for System Audio
@@ -204,8 +255,12 @@ export class AppState {
     }
   }
 
-  public async startMeeting(): Promise<void> {
-    console.log('[Main] Starting Meeting...');
+  public async startMeeting(metadata?: any): Promise<void> {
+    console.log('[Main] Starting Meeting...', metadata);
+    if (metadata) {
+      this.intelligenceManager.setMeetingMetadata(metadata);
+    }
+
 
     // 1. Start Native Audio Service Process
     this.nativeServiceManager.start();
@@ -456,6 +511,10 @@ export class AppState {
     return this.intelligenceManager
   }
 
+  public getThemeManager(): ThemeManager {
+    return this.themeManager
+  }
+
   public getView(): "queue" | "solutions" {
     return this.view
   }
@@ -690,6 +749,31 @@ async function initializeApp() {
     // appState.connectNativeAudio().then(() => {
     //   console.log("Native audio client connected/connecting...")
     // });
+
+    // Initialize CalendarManager
+    try {
+      const { CalendarManager } = require('./services/CalendarManager');
+      const calMgr = CalendarManager.getInstance();
+      calMgr.init();
+
+      calMgr.on('start-meeting-requested', (event: any) => {
+        console.log('[Main] Start meeting requested from calendar notification', event);
+        appState.centerAndShowWindow();
+        appState.startMeeting({
+          title: event.title,
+          calendarEventId: event.id,
+          source: 'calendar'
+        });
+      });
+
+      calMgr.on('open-requested', () => {
+        appState.centerAndShowWindow();
+      });
+
+      console.log('[Main] CalendarManager initialized');
+    } catch (e) {
+      console.error('[Main] Failed to initialize CalendarManager:', e);
+    }
 
     // Simplified Dock Icon Logic - REMOVED per user request
     // We will rely on Electron's default for Dev, and package.json for Build.
