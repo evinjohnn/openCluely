@@ -405,17 +405,35 @@ export class IntelligenceManager extends EventEmitter {
             const preparedTranscript = prepareTranscriptForWhatToAnswer(transcriptTurns, 12);
 
             // Single-pass LLM call: question inference + answer generation
-            // NOW STREAMING
-
-            // Emit start event if needed (optional)
-            // this.emit('suggested_answer_started');
+            // NOW STREAMING - Groq first, then Gemini fallback
 
             let fullAnswer = "";
-            const stream = this.whatToAnswerLLM.generateStream(preparedTranscript);
+            let useGroq = this.llmHelper.hasGroqClient();
 
-            for await (const token of stream) {
-                this.emit('suggested_answer_token', token, question || 'inferred', confidence);
-                fullAnswer += token;
+            if (useGroq) {
+                // Try Groq first for faster, more conversational responses
+                try {
+                    console.log(`[IntelligenceManager] Using Groq for WhatToAnswer...`);
+                    const groqStream = this.llmHelper.streamGroqWhatToAnswer(preparedTranscript);
+                    for await (const token of groqStream) {
+                        this.emit('suggested_answer_token', token, question || 'inferred', confidence);
+                        fullAnswer += token;
+                    }
+                } catch (groqError: any) {
+                    console.warn(`[IntelligenceManager] Groq WhatToAnswer failed, falling back to Gemini:`, groqError.message);
+                    useGroq = false;
+                    fullAnswer = ""; // Reset for retry
+                }
+            }
+
+            if (!useGroq || !fullAnswer) {
+                // Fall back to Gemini WhatToAnswerLLM
+                console.log(`[IntelligenceManager] Using Gemini WhatToAnswerLLM...`);
+                const stream = this.whatToAnswerLLM.generateStream(preparedTranscript);
+                for await (const token of stream) {
+                    this.emit('suggested_answer_token', token, question || 'inferred', confidence);
+                    fullAnswer += token;
+                }
             }
 
             // Sanity check final answer
@@ -480,15 +498,40 @@ export class IntelligenceManager extends EventEmitter {
             const refinementRequest = userRequest || intent;
 
             let fullRefined = "";
-            const stream = this.followUpLLM.generateStream(
-                this.lastAssistantMessage,
-                refinementRequest,
-                context
-            );
+            let useGroq = this.llmHelper.hasGroqClient();
 
-            for await (const token of stream) {
-                this.emit('refined_answer_token', token, intent);
-                fullRefined += token;
+            if (useGroq) {
+                // Try Groq first for faster, more conversational responses
+                try {
+                    console.log(`[IntelligenceManager] Using Groq for FollowUp...`);
+                    const groqStream = this.llmHelper.streamGroqFollowUp(
+                        this.lastAssistantMessage,
+                        refinementRequest,
+                        context
+                    );
+                    for await (const token of groqStream) {
+                        this.emit('refined_answer_token', token, intent);
+                        fullRefined += token;
+                    }
+                } catch (groqError: any) {
+                    console.warn(`[IntelligenceManager] Groq FollowUp failed, falling back to Gemini:`, groqError.message);
+                    useGroq = false;
+                    fullRefined = ""; // Reset for retry
+                }
+            }
+
+            if (!useGroq || !fullRefined) {
+                // Fall back to Gemini FollowUpLLM
+                console.log(`[IntelligenceManager] Using Gemini FollowUpLLM...`);
+                const stream = this.followUpLLM.generateStream(
+                    this.lastAssistantMessage,
+                    refinementRequest,
+                    context
+                );
+                for await (const token of stream) {
+                    this.emit('refined_answer_token', token, intent);
+                    fullRefined += token;
+                }
             }
 
             if (fullRefined) {
@@ -530,11 +573,32 @@ export class IntelligenceManager extends EventEmitter {
             }
 
             let fullSummary = "";
-            const stream = this.recapLLM.generateStream(context);
+            let useGroq = this.llmHelper.hasGroqClient();
 
-            for await (const token of stream) {
-                this.emit('recap_token', token);
-                fullSummary += token;
+            if (useGroq) {
+                // Try Groq first for faster responses
+                try {
+                    console.log(`[IntelligenceManager] Using Groq for Recap...`);
+                    const groqStream = this.llmHelper.streamGroqRecap(context);
+                    for await (const token of groqStream) {
+                        this.emit('recap_token', token);
+                        fullSummary += token;
+                    }
+                } catch (groqError: any) {
+                    console.warn(`[IntelligenceManager] Groq Recap failed, falling back to Gemini:`, groqError.message);
+                    useGroq = false;
+                    fullSummary = ""; // Reset for retry
+                }
+            }
+
+            if (!useGroq || !fullSummary) {
+                // Fall back to Gemini RecapLLM
+                console.log(`[IntelligenceManager] Using Gemini RecapLLM...`);
+                const stream = this.recapLLM.generateStream(context);
+                for await (const token of stream) {
+                    this.emit('recap_token', token);
+                    fullSummary += token;
+                }
             }
 
             if (fullSummary) {

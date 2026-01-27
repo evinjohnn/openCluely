@@ -1,7 +1,13 @@
 import { GoogleGenAI } from "@google/genai"
 import Groq from "groq-sdk"
 import fs from "fs"
-import { HARD_SYSTEM_PROMPT, GROQ_SYSTEM_PROMPT } from "./llm/prompts"
+import {
+  HARD_SYSTEM_PROMPT,
+  GROQ_SYSTEM_PROMPT,
+  GROQ_WHAT_TO_ANSWER_PROMPT,
+  GROQ_FOLLOW_UP_PROMPT,
+  GROQ_RECAP_PROMPT
+} from "./llm/prompts"
 
 interface OllamaResponse {
   response: string
@@ -951,6 +957,123 @@ ANSWER DIRECTLY:`;
         return Reflect.get(target, prop, receiver);
       }
     });
+  }
+
+  // ==========================================
+  // PUBLIC GROQ STREAMING METHODS FOR MODES
+  // Used by IntelligenceManager for mode-specific Groq calls
+  // ==========================================
+
+  /**
+   * Check if Groq is available for use
+   */
+  public hasGroqClient(): boolean {
+    return this.groqClient !== null;
+  }
+
+  /**
+   * Stream "What To Answer" mode using Groq
+   * Uses GROQ_WHAT_TO_ANSWER_PROMPT for interview-style answers
+   */
+  public async *streamGroqWhatToAnswer(cleanedTranscript: string): AsyncGenerator<string, void, unknown> {
+    if (!this.groqClient) throw new Error("Groq client not initialized");
+
+    const fullMessage = `${GROQ_WHAT_TO_ANSWER_PROMPT}\n\nTRANSCRIPT:\n${cleanedTranscript}`;
+
+    try {
+      console.log(`[LLMHelper] 🚀 Groq WhatToAnswer streaming...`);
+      const stream = await this.groqClient.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: fullMessage }],
+        stream: true,
+        temperature: 0.3,
+        max_tokens: 4096,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          yield content;
+        }
+      }
+    } catch (error: any) {
+      console.error(`[LLMHelper] Groq WhatToAnswer failed:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Stream "Follow Up" (refinement) mode using Groq
+   * Uses GROQ_FOLLOW_UP_PROMPT for shortening/expanding answers
+   */
+  public async *streamGroqFollowUp(
+    previousAnswer: string,
+    refinementRequest: string,
+    context?: string
+  ): AsyncGenerator<string, void, unknown> {
+    if (!this.groqClient) throw new Error("Groq client not initialized");
+
+    const fullMessage = `${GROQ_FOLLOW_UP_PROMPT}
+
+PREVIOUS ANSWER:
+${previousAnswer}
+
+USER REQUEST: ${refinementRequest}
+${context ? `\nCONTEXT:\n${context}` : ''}
+
+REFINED ANSWER:`;
+
+    try {
+      console.log(`[LLMHelper] 🚀 Groq FollowUp streaming...`);
+      const stream = await this.groqClient.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: fullMessage }],
+        stream: true,
+        temperature: 0.3,
+        max_tokens: 4096,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          yield content;
+        }
+      }
+    } catch (error: any) {
+      console.error(`[LLMHelper] Groq FollowUp failed:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Stream "Recap" mode using Groq
+   * Uses GROQ_RECAP_PROMPT for conversation summary
+   */
+  public async *streamGroqRecap(context: string): AsyncGenerator<string, void, unknown> {
+    if (!this.groqClient) throw new Error("Groq client not initialized");
+
+    const fullMessage = `${GROQ_RECAP_PROMPT}\n\nCONVERSATION:\n${context}`;
+
+    try {
+      console.log(`[LLMHelper] 🚀 Groq Recap streaming...`);
+      const stream = await this.groqClient.chat.completions.create({
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: fullMessage }],
+        stream: true,
+        temperature: 0.2,
+        max_tokens: 2048,
+      });
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          yield content;
+        }
+      }
+    } catch (error: any) {
+      console.error(`[LLMHelper] Groq Recap failed:`, error.message);
+      throw error;
+    }
   }
 
   /**
