@@ -29,11 +29,12 @@ export class ProcessingHelper {
       this.llmHelper = new LLMHelper(undefined, true, ollamaModel, ollamaUrl)
     } else {
       const apiKey = process.env.GEMINI_API_KEY
+      const groqApiKey = process.env.GROQ_API_KEY
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY not found in environment variables. Set GEMINI_API_KEY or enable Ollama with USE_OLLAMA=true")
       }
       // console.log("[ProcessingHelper] Initializing with Gemini")
-      this.llmHelper = new LLMHelper(apiKey, false)
+      this.llmHelper = new LLMHelper(apiKey, false, undefined, undefined, groqApiKey)
     }
   }
 

@@ -121,6 +121,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
     const [micLevel, setMicLevel] = useState(0);
 
     const [apiKey, setApiKey] = useState('');
+    const [groqApiKey, setGroqApiKey] = useState('');
 
     const [serviceAccountPath, setServiceAccountPath] = useState('');
     const [calendarStatus, setCalendarStatus] = useState<{ connected: boolean; email?: string }>({ connected: false });
@@ -551,6 +552,23 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({ isOpen, onClose }) =>
                                                 Save
                                             </button>
                                         </div>
+                                    </div>
+
+                                    <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle">
+                                        <label className="block text-xs font-medium text-text-secondary uppercase tracking-wide mb-2">Groq API Key</label>
+                                        <div className="flex gap-3">
+                                            <input
+                                                type="password"
+                                                value={groqApiKey}
+                                                onChange={(e) => setGroqApiKey(e.target.value)}
+                                                placeholder="gsk_..."
+                                                className="flex-1 bg-bg-input border border-border-subtle rounded-lg px-4 py-2.5 text-xs text-text-primary focus:outline-none focus:border-accent-primary transition-colors"
+                                            />
+                                            <button className="bg-bg-input hover:bg-bg-secondary border border-border-subtle text-text-primary px-5 py-2.5 rounded-lg text-xs font-medium transition-colors">
+                                                Save
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-text-tertiary mt-2">Used for fast text-only responses (optional)</p>
                                     </div>
 
                                     <div className="bg-bg-item-surface rounded-xl p-5 border border-border-subtle">

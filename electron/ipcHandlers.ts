@@ -210,6 +210,10 @@ export function initializeIpcHandlers(appState: AppState): void {
     appState.quitAndInstallUpdate()
   })
 
+  ipcMain.handle("delete-meeting", async (_, id: string) => {
+    return DatabaseManager.getInstance().deleteMeeting(id);
+  });
+
   ipcMain.handle("check-for-updates", async () => {
     await appState.checkForUpdates()
   })

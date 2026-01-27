@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ToggleLeft, ToggleRight, Search, Zap, Calendar, ArrowRight, ArrowLeft, MoreHorizontal, Globe, Clock, ChevronRight, Settings, RefreshCw, Eye, EyeOff, Ghost, Plus, Mail, Link, ChevronDown } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Search, Zap, Calendar, ArrowRight, ArrowLeft, MoreHorizontal, Globe, Clock, ChevronRight, Settings, RefreshCw, Eye, EyeOff, Ghost, Plus, Mail, Link as LinkIcon, ChevronDown, Trash2 } from 'lucide-react';
 import icon from "./icon.png";
 import mainui from "../UI_comp/mainui.png";
 import calender from "../UI_comp/calender.png";
@@ -190,6 +190,14 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
 
 
     const [forwardMeeting, setForwardMeeting] = useState<Meeting | null>(null);
+    const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+
+    // Global click listener to close menu
+    useEffect(() => {
+        const handleClickOutside = () => setActiveMenuId(null);
+        window.addEventListener('click', handleClickOutside);
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, []);
 
     const handleOpenMeeting = async (meeting: Meeting) => {
         setForwardMeeting(null); // Clear forward history on new navigation
@@ -477,7 +485,7 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                                             {nextMeeting.link && (
                                                                 <>
                                                                     <span className="opacity-20">|</span>
-                                                                    <Link size={12} />
+                                                                    <LinkIcon size={12} />
                                                                     <span className="truncate max-w-[150px]">Meeting Link Found</span>
                                                                 </>
                                                             )}
@@ -545,13 +553,13 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                                 <h3 className="text-[19px] leading-tight mb-4">
                                                     {isCalendarConnected ? (
                                                         <>
-                                                            <span className="block font-semibold text-text-primary">Calendar linked</span>
-                                                            <span className="block font-medium text-text-secondary text-[0.95em]">Events synced</span>
+                                                            <span className="block font-semibold text-white">Calendar linked</span>
+                                                            <span className="block font-medium text-white/60 text-[0.95em]">Events synced</span>
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <span className="block font-semibold text-text-primary">Link your calendar to</span>
-                                                            <span className="block font-medium text-text-secondary text-[0.95em]">see upcoming events</span>
+                                                            <span className="block font-semibold text-white">Link your calendar to</span>
+                                                            <span className="block font-medium text-white/60 text-[0.95em]">see upcoming events</span>
                                                         </>
                                                     )}
                                                 </h3>
@@ -579,12 +587,14 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                                     <motion.div
                                                         key={m.id}
                                                         layoutId={`meeting-${m.id}`}
-                                                        className="group flex items-center justify-between px-3 py-2 rounded-lg bg-transparent hover:bg-white/5 transition-colors cursor-pointer"
+                                                        className="group relative flex items-center justify-between px-3 py-2 rounded-lg bg-transparent hover:bg-white/5 transition-colors cursor-pointer"
                                                         onClick={() => handleOpenMeeting(m)}
                                                     >
                                                         <div className={`font-medium text-[15px] max-w-[60%] truncate ${m.title === 'Processing...' ? 'text-blue-400 italic animate-pulse' : (m.title.includes('Demo') ? 'text-text-primary' : 'text-text-secondary group-hover:text-text-primary')}`}>
                                                             {m.title}
                                                         </div>
+
+                                                        {/* Time & Duration Section */}
                                                         <div className="flex items-center gap-4">
                                                             {m.title === 'Processing...' ? (
                                                                 <div className="flex items-center gap-2">
@@ -593,15 +603,74 @@ const Launcher: React.FC<LauncherProps> = ({ onStartMeeting, onOpenSettings }) =
                                                                 </div>
                                                             ) : (
                                                                 <>
-                                                                    <span className="bg-bg-input text-text-tertiary text-[11px] px-2.5 py-1 rounded-full font-medium min-w-[50px] text-center tracking-wide">
+                                                                    <span className="bg-white/10 text-text-tertiary text-[11px] px-2.5 py-1 rounded-full font-medium min-w-[50px] text-center tracking-wide">
                                                                         {formatDurationPill(m.duration)}
                                                                     </span>
-                                                                    <span className="text-xs text-text-tertiary font-medium min-w-[60px] text-right">
+
+                                                                    {/* Time Text (Should fade out on hover) */}
+                                                                    <span className="text-xs text-text-tertiary font-medium min-w-[60px] text-right transition-all duration-200 ease-out group-hover:opacity-0 group-hover:translate-x-2 delayed-hover-exit">
                                                                         {formatTime(m.date)}
                                                                     </span>
                                                                 </>
                                                             )}
                                                         </div>
+
+                                                        {/* Context Menu Trigger (Slides in on hover) */}
+                                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 translate-x-4 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-0">
+                                                            <button
+                                                                className="p-1.5 text-text-secondary hover:text-white transition-colors"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setActiveMenuId(activeMenuId === m.id ? null : m.id);
+                                                                }}
+                                                            >
+                                                                <MoreHorizontal size={16} />
+                                                            </button>
+                                                        </div>
+
+                                                        {/* Dropdown Menu */}
+                                                        <AnimatePresence>
+                                                            {activeMenuId === m.id && (
+                                                                <motion.div
+                                                                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                                    exit={{ opacity: 0, scale: 0.95, y: 5 }}
+                                                                    transition={{ duration: 0.1 }}
+                                                                    className="absolute right-0 top-full mt-1 w-28 bg-[#1E1E1E]/80 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 overflow-hidden"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <div className="p-1 flex flex-col gap-0.5">
+                                                                        <button
+                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-text-primary hover:bg-white/10 rounded-lg transition-colors text-left"
+                                                                            onClick={() => {
+                                                                                // Placeholder copy link
+                                                                                console.log("Copy link clicked");
+                                                                                setActiveMenuId(null);
+                                                                            }}
+                                                                        >
+                                                                            <LinkIcon size={13} />
+                                                                            Copy link
+                                                                        </button>
+                                                                        <button
+                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-lg transition-colors text-left"
+                                                                            onClick={async () => {
+                                                                                if (window.electronAPI && window.electronAPI.deleteMeeting) {
+                                                                                    const success = await window.electronAPI.deleteMeeting(m.id);
+                                                                                    if (success) {
+                                                                                        // Optimistic update or refetch
+                                                                                        setMeetings(prev => prev.filter(meeting => meeting.id !== m.id));
+                                                                                    }
+                                                                                }
+                                                                                setActiveMenuId(null);
+                                                                            }}
+                                                                        >
+                                                                            <Trash2 size={13} />
+                                                                            Delete
+                                                                        </button>
+                                                                    </div>
+                                                                </motion.div>
+                                                            )}
+                                                        </AnimatePresence>
                                                     </motion.div>
                                                 ))}
                                             </div>

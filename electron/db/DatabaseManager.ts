@@ -319,6 +319,20 @@ export class DatabaseManager {
         };
     }
 
+    public deleteMeeting(id: string): boolean {
+        if (!this.db) return false;
+
+        try {
+            const stmt = this.db.prepare('DELETE FROM meetings WHERE id = ?');
+            const info = stmt.run(id);
+            console.log(`[DatabaseManager] Deleted meeting ${id}. Changes: ${info.changes}`);
+            return info.changes > 0;
+        } catch (error) {
+            console.error(`[DatabaseManager] Failed to delete meeting ${id}:`, error);
+            return false;
+        }
+    }
+
     public seedDemoMeeting() {
         if (!this.db) return;
 

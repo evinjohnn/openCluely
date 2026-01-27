@@ -50,7 +50,7 @@ const UpdateBanner: React.FC = () => {
                 >
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 10, filter: "blur(10px)" }}
-                        animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
+                        animate={{ opacity: 1, scale: 1, y: 0, filter: "none" }}
                         exit={{ opacity: 0, scale: 0.95, y: 10, filter: "blur(10px)" }}
                         transition={{ type: 'spring', damping: 30, stiffness: 400, mass: 1 }}
                         className="w-full max-w-[340px] mx-4"
@@ -82,7 +82,7 @@ const UpdateBanner: React.FC = () => {
 
                                     <button
                                         onClick={handleRestart}
-                                        className="flex-1 py-[6px] bg-[#007AFF] hover:bg-[#0062CC] active:bg-[#0051A8] active:scale-[0.98] text-[13px] font-medium text-white rounded-[8px] transition-all duration-150 shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+                                        className="flex-1 py-[6px] bg-[#0091FF]/70 hover:bg-[#0091FF] active:scale-[0.98] text-[13px] font-medium text-white rounded-[8px] transition-all duration-200 shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
                                     >
                                         Restart
                                     </button>

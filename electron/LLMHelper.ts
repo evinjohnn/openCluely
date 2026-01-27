@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai"
+import Groq from "groq-sdk"
 import fs from "fs"
-import { HARD_SYSTEM_PROMPT } from "./llm/prompts"
+import { HARD_SYSTEM_PROMPT, GROQ_SYSTEM_PROMPT } from "./llm/prompts"
 
 interface OllamaResponse {
   response: string
@@ -10,6 +11,7 @@ interface OllamaResponse {
 // Model constant for Gemini 3 Flash
 const GEMINI_FLASH_MODEL = "gemini-3-flash-preview"
 const GEMINI_PRO_MODEL = "gemini-3-pro-preview"
+const GROQ_MODEL = "llama-3.3-70b-versatile"
 const MAX_OUTPUT_TOKENS = 65536
 
 // Simple prompt for image analysis (not interview copilot - kept separate)
@@ -17,14 +19,23 @@ const IMAGE_ANALYSIS_PROMPT = `Analyze concisely. Be direct. No markdown formatt
 
 export class LLMHelper {
   private client: GoogleGenAI | null = null
+  private groqClient: Groq | null = null
   private apiKey: string | null = null
+  private groqApiKey: string | null = null
   private useOllama: boolean = false
   private ollamaModel: string = "llama3.2"
   private ollamaUrl: string = "http://localhost:11434"
   private geminiModel: string = GEMINI_FLASH_MODEL
 
-  constructor(apiKey?: string, useOllama: boolean = false, ollamaModel?: string, ollamaUrl?: string) {
+  constructor(apiKey?: string, useOllama: boolean = false, ollamaModel?: string, ollamaUrl?: string, groqApiKey?: string) {
     this.useOllama = useOllama
+
+    // Initialize Groq client if API key provided
+    if (groqApiKey) {
+      this.groqApiKey = groqApiKey
+      this.groqClient = new Groq({ apiKey: groqApiKey })
+      console.log(`[LLMHelper] Groq client initialized with model: ${GROQ_MODEL}`)
+    }
 
     if (useOllama) {
       this.ollamaUrl = ollamaUrl || "http://localhost:11434"
@@ -571,13 +582,20 @@ ANSWER DIRECTLY:`;
   }
 
   /**
-   * Stream chat response from Gemini
-   * Yields chunks of text as they arrive
+   * Stream chat response with Groq-first fallback chain for text-only,
+   * and Gemini-only for multimodal (images)
+   * 
+   * TEXT-ONLY FALLBACK CHAIN:
+   * 1. Groq (llama-3.3-70b-versatile) - Primary
+   * 2. Gemini Flash - 1st fallback
+   * 3. Gemini Flash + Pro parallel - 2nd fallback
+   * 4. Gemini Flash retries (max 3) - Last resort
+   * 
+   * MULTIMODAL: Gemini-only (existing logic)
    */
   public async *streamChatWithGemini(message: string, imagePath?: string, context?: string, skipSystemPrompt: boolean = false): AsyncGenerator<string, void, unknown> {
     console.log(`[LLMHelper] streamChatWithGemini called with message:`, message.substring(0, 50));
 
-    // Build context-aware prompt
     // Build context-aware prompt
     let fullMessage = skipSystemPrompt ? message : `${HARD_SYSTEM_PROMPT}\n\n${message}`;
     if (context) {
@@ -587,17 +605,26 @@ ANSWER DIRECTLY:`;
     }
 
     if (this.useOllama) {
-      // Basic Ollama streaming (simulated for consistency if needed, or implement real streaming)
-      // For now, we'll fall back to non-streaming for Ollama to match current capability
-      // or implement simulated streaming if the user insists.
-      // Given requirements, let's just await the full response and yield it as one chunk for Ollama
-      // UNLESS we want to implement fetch with stream: true for Ollama.
-      // Let's keep it simple: fallback to full response for Ollama for this pass.
       const response = await this.callOllama(fullMessage);
       yield response;
       return;
     }
 
+    // TEXT-ONLY: Use Groq-first fallback chain with Groq-specific prompt
+    if (!imagePath && this.groqClient) {
+      console.log(`[LLMHelper] Text-only request detected. Using Groq-first fallback chain...`);
+      // Build Groq-specific message (separate from Gemini prompt)
+      let groqMessage = skipSystemPrompt ? message : `${GROQ_SYSTEM_PROMPT}\n\n${message}`;
+      if (context) {
+        groqMessage = skipSystemPrompt
+          ? `CONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`
+          : `${GROQ_SYSTEM_PROMPT}\n\nCONTEXT:\n${context}\n\nUSER QUESTION:\n${message}`;
+      }
+      yield* this.streamWithGroqFallbackChain(groqMessage, fullMessage);
+      return;
+    }
+
+    // MULTIMODAL or no Groq: Use existing Gemini-only path
     if (!this.client) throw new Error("No LLM provider configured");
 
     const buildContents = async () => {
@@ -621,8 +648,6 @@ ANSWER DIRECTLY:`;
     try {
       console.log(`[LLMHelper] [STREAM-V2] Starting stream with model: ${this.geminiModel}`);
 
-      // Strategy: Race the stream initialization against a timeout
-      // If Flash takes > 4000ms to start, we failover to Pro
       const startStream = async (model: string) => {
         return await this.client!.models.generateContentStream({
           model: model,
@@ -637,11 +662,7 @@ ANSWER DIRECTLY:`;
       let streamResult;
 
       try {
-        // Attempt 1: FAST (Flash) with Timeout
-        // Dynamic Timeout: 8s for text (aggressive failover), 10s for multimodal
-        // We want to failover to Pro QUICKLY if Flash is hanging.
         const timeoutMs = imagePath ? 10000 : 8000;
-
         console.log(`[LLMHelper] Attempting Flash stream (${this.geminiModel}) with ${timeoutMs}ms timeout...`);
         streamResult = await Promise.race([
           startStream(this.geminiModel),
@@ -650,26 +671,18 @@ ANSWER DIRECTLY:`;
           )
         ]);
       } catch (err: any) {
-        // If Timeout or Error, try Backup (Pro)
         console.warn(`[LLMHelper] Flash Stream FAILED. Reason: ${err.message}`);
-        if (err.message !== "TIMEOUT") {
-          console.error(`[LLMHelper] Full Flash Error Code:`, err);
-        }
-
         console.warn(`[LLMHelper] Switching to Backup (gemini-3-pro-preview)...`);
-        const GEMINI_PRO_MODEL = "gemini-3-pro-preview";
         try {
           streamResult = await startStream(GEMINI_PRO_MODEL);
           console.log(`[LLMHelper] Backup stream (Pro) started successfully.`);
-          // Warn the user via the first token so they know why it was slow? No, seamless is better.
         } catch (backupErr: any) {
-          // If Pro also fails, throw original or new error
           console.error(`[LLMHelper] Backup stream also failed:`, backupErr);
-          throw err; // Throw original error (timeout/flash error) as it's more relevant to "why" it failed first
+          throw err;
         }
       }
 
-      // @ts-ignore - SDK typing might be slightly off or version dependent, handle both cases
+      // @ts-ignore
       const stream = streamResult.stream || streamResult;
 
       const streamStartTime = Date.now();
@@ -685,8 +698,6 @@ ANSWER DIRECTLY:`;
         let chunkText = "";
 
         try {
-          // console.log("[STREAM-DEBUG] Chunk keys:", Object.keys(chunk));
-
           if (typeof chunk.text === 'function') {
             chunkText = chunk.text();
           } else if (typeof chunk.text === 'string') {
@@ -696,14 +707,9 @@ ANSWER DIRECTLY:`;
           }
         } catch (err) {
           console.error("[STREAM-DEBUG] Error extracting text from chunk:", err);
-          console.error("[STREAM-DEBUG] Chunk structure:", JSON.stringify(chunk).substring(0, 200));
         }
 
         if (chunkText) {
-          // Check for fallback phrases in the accumulated chunk (simple check)
-          // Real-time filtering is hard, so we do best-effort here.
-          // If we wanted to be strict, we'd buffer, but that adds latency.
-          // We'll yield raw tokens.
           yield chunkText;
         }
       }
@@ -711,7 +717,6 @@ ANSWER DIRECTLY:`;
     } catch (error: any) {
       console.error("[LLMHelper] Streaming error:", error);
 
-      // Simple retry logic for 503s on START (not during stream)
       if (error.message.includes("503") || error.message.includes("overloaded")) {
         yield "The AI service is currently overloaded. Please try again in a moment.";
         return;
@@ -720,6 +725,168 @@ ANSWER DIRECTLY:`;
       throw error;
     }
   }
+
+  /**
+   * Stream with Groq-first fallback chain for text-only requests
+   * Chain: Groq → Flash → Flash+Pro parallel → Flash retries (max 3)
+   * @param groqMessage - Message with GROQ_SYSTEM_PROMPT for Groq calls
+   * @param geminiMessage - Message with HARD_SYSTEM_PROMPT for Gemini fallback calls
+   */
+  private async *streamWithGroqFallbackChain(groqMessage: string, geminiMessage: string): AsyncGenerator<string, void, unknown> {
+    let lastError: Error | null = null;
+
+    // ATTEMPT 1: Groq (Primary) - uses Groq-specific prompt
+    try {
+      console.log(`[LLMHelper] 🚀 Attempting Groq (${GROQ_MODEL})...`);
+      yield* this.streamWithGroq(groqMessage);
+      console.log(`[LLMHelper] ✅ Groq stream completed successfully`);
+      return; // Success - exit
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[LLMHelper] ⚠️ Groq failed: ${err.message}`);
+    }
+
+    // ATTEMPT 2: Gemini Flash (1st fallback) - uses Gemini prompt
+    if (this.client) {
+      try {
+        console.log(`[LLMHelper] 🔄 Falling back to Gemini Flash...`);
+        yield* this.streamWithGeminiModel(geminiMessage, GEMINI_FLASH_MODEL);
+        console.log(`[LLMHelper] ✅ Gemini Flash stream completed successfully`);
+        return; // Success - exit
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[LLMHelper] ⚠️ Gemini Flash failed: ${err.message}`);
+      }
+
+      // ATTEMPT 3: Flash + Pro parallel (2nd fallback)
+      try {
+        console.log(`[LLMHelper] 🚀 Attempting Flash + Pro parallel race...`);
+        yield* this.streamWithGeminiParallelRace(geminiMessage);
+        console.log(`[LLMHelper] ✅ Parallel race stream completed successfully`);
+        return; // Success - exit
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[LLMHelper] ⚠️ Parallel race failed: ${err.message}`);
+      }
+
+      // ATTEMPT 4-6: Flash retries (max 3 total retries)
+      for (let retry = 1; retry <= 3; retry++) {
+        try {
+          console.log(`[LLMHelper] 🔁 Flash retry ${retry}/3...`);
+          await this.delay(500 * retry); // Exponential backoff
+          yield* this.streamWithGeminiModel(geminiMessage, GEMINI_FLASH_MODEL);
+          console.log(`[LLMHelper] ✅ Flash retry ${retry} succeeded`);
+          return; // Success - exit
+        } catch (err: any) {
+          lastError = err;
+          console.warn(`[LLMHelper] ⚠️ Flash retry ${retry} failed: ${err.message}`);
+        }
+      }
+    }
+
+    // All attempts failed
+    console.error(`[LLMHelper] ❌ All fallback attempts exhausted`);
+    yield "I apologize, but all AI services are currently unavailable. Please try again in a moment.";
+  }
+
+  /**
+   * Stream response from Groq
+   */
+  private async *streamWithGroq(fullMessage: string): AsyncGenerator<string, void, unknown> {
+    if (!this.groqClient) throw new Error("Groq client not initialized");
+
+    const stream = await this.groqClient.chat.completions.create({
+      model: GROQ_MODEL,
+      messages: [{ role: "user", content: fullMessage }],
+      stream: true,
+      temperature: 0.4,
+      max_tokens: 8192,
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        yield content;
+      }
+    }
+  }
+
+  /**
+   * Stream response from a specific Gemini model
+   */
+  private async *streamWithGeminiModel(fullMessage: string, model: string): AsyncGenerator<string, void, unknown> {
+    if (!this.client) throw new Error("Gemini client not initialized");
+
+    const streamResult = await this.client.models.generateContentStream({
+      model: model,
+      contents: [{ text: fullMessage }],
+      config: {
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        temperature: 0.4,
+      }
+    });
+
+    // @ts-ignore
+    const stream = streamResult.stream || streamResult;
+
+    for await (const chunk of stream) {
+      let chunkText = "";
+      if (typeof chunk.text === 'function') {
+        chunkText = chunk.text();
+      } else if (typeof chunk.text === 'string') {
+        chunkText = chunk.text;
+      } else if (chunk.candidates?.[0]?.content?.parts?.[0]?.text) {
+        chunkText = chunk.candidates[0].content.parts[0].text;
+      }
+      if (chunkText) {
+        yield chunkText;
+      }
+    }
+  }
+
+  /**
+   * Race Flash and Pro streams, return whichever succeeds first
+   */
+  private async *streamWithGeminiParallelRace(fullMessage: string): AsyncGenerator<string, void, unknown> {
+    if (!this.client) throw new Error("Gemini client not initialized");
+
+    // Start both streams
+    const flashPromise = this.collectStreamResponse(fullMessage, GEMINI_FLASH_MODEL);
+    const proPromise = this.collectStreamResponse(fullMessage, GEMINI_PRO_MODEL);
+
+    // Race - whoever finishes first wins
+    const result = await Promise.any([flashPromise, proPromise]);
+
+    // Yield the collected response character by character to simulate streaming
+    // (Or yield in chunks for efficiency)
+    const chunkSize = 10;
+    for (let i = 0; i < result.length; i += chunkSize) {
+      yield result.substring(i, i + chunkSize);
+    }
+  }
+
+  /**
+   * Collect full response from a Gemini model (non-streaming for race)
+   */
+  private async collectStreamResponse(fullMessage: string, model: string): Promise<string> {
+    if (!this.client) throw new Error("Gemini client not initialized");
+
+    const response = await this.client.models.generateContent({
+      model: model,
+      contents: [{ text: fullMessage }],
+      config: {
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        temperature: 0.4,
+      }
+    });
+
+    return response.text || "";
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
 
   public isUsingOllama(): boolean {
     return this.useOllama;
